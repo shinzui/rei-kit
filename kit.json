@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "rei-bootstrap",
+      "description": "Interactively bootstrap intentions, habits, and reflections for Rei personal coaching",
+      "path": "skills/rei-bootstrap",
+      "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-bootstrap-habit",
+      "description": "Interactively bootstrap a new habit for Rei personal coaching",
+      "path": "skills/rei-bootstrap-habit",
+      "files": ["SKILL.md"]
+    }
+  ],
+  "agents": []
+}
