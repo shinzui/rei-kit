@@ -12,6 +12,12 @@
       "description": "Interactively bootstrap a new habit for Rei personal coaching",
       "path": "skills/rei-bootstrap-habit",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-summarize-links",
+      "description": "Extract markdown links from a document, summarize each URL, create Rei notes with summaries, and connect them to links via edges",
+      "path": "skills/rei-summarize-links",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": []
