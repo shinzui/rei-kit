@@ -27,7 +27,7 @@
     },
     {
       "name": "rei-collection-epub",
-      "description": "Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, timestamps, and edges",
+      "description": "Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, edges, content analysis, and timestamps",
       "path": "skills/rei-collection-epub",
       "files": ["SKILL.md"]
     }
