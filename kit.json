@@ -18,6 +18,18 @@
       "description": "Extract markdown links from a document, summarize each URL, create Rei notes with summaries, and connect them to links via edges",
       "path": "skills/rei-summarize-links",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-scaffold-kit-skill",
+      "description": "Scaffold new Claude Code skills and agents for Rei, following established conventions from the rei codebase",
+      "path": "skills/rei-scaffold-kit-skill",
+      "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-collection-epub",
+      "description": "Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, timestamps, and edges",
+      "path": "skills/rei-collection-epub",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": []
