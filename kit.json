@@ -26,6 +26,12 @@
       "files": ["SKILL.md"]
     },
     {
+      "name": "rei-ingest-url",
+      "description": "Ingest a single URL into Rei — reuse or create a link, summarize the content into a note, connect them with a summarizes edge, and classify the link with author-type, content-type, media, platform, and reused/new topical tags",
+      "path": "skills/rei-ingest-url",
+      "files": ["SKILL.md"]
+    },
+    {
       "name": "rei-collection-epub",
       "description": "Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, edges, content analysis, and timestamps",
       "path": "skills/rei-collection-epub",
