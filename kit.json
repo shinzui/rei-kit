@@ -38,5 +38,12 @@
       "files": ["SKILL.md"]
     }
   ],
-  "agents": []
+  "agents": [
+    {
+      "name": "rei-custom-property-guide",
+      "description": "Guide users through creating and managing custom properties in Rei. Helps design property schemas, choose value types, configure category scopes, and create state machine workflows.",
+      "path": "agents",
+      "files": ["rei-custom-property-guide.md"]
+    }
+  ]
 }
