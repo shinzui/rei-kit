@@ -36,6 +36,12 @@
       "description": "Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, edges, content analysis, and timestamps",
       "path": "skills/rei-collection-epub",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-ingest-url-collection",
+      "description": "Read a markdown file of links, run the full rei-ingest-url workflow for each URL, and gather every resulting summary note into a single Rei collection",
+      "path": "skills/rei-ingest-url-collection",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
