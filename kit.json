@@ -42,6 +42,12 @@
       "description": "Read a markdown file of links, run the full rei-ingest-url workflow for each URL, and gather every resulting summary note into a single Rei collection",
       "path": "skills/rei-ingest-url-collection",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-complete-from-commits",
+      "description": "Backlog cleanup — for a given Rei intention and git repository, find commits whose Intention: trailer matches the intention's children and bulk-complete each with --at set to the latest matching commit timestamp; optionally infer dates for children with no trailer matches from pre-trailer commit subjects",
+      "path": "skills/rei-complete-from-commits",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
