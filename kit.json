@@ -48,6 +48,12 @@
       "description": "Backlog cleanup — for a given Rei intention and git repository, find commits whose Intention: trailer matches the intention's children and bulk-complete each with --at set to the latest matching commit timestamp; optionally infer dates for children with no trailer matches from pre-trailer commit subjects",
       "path": "skills/rei-complete-from-commits",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-ingest-markdown",
+      "description": "Ingest a pre-converted markdown file (with frontmatter) into Rei — reuse or create a link from the source URL, save the full markdown as an archive note, summarize it into a separate summary note, wire them with `archives` and `summarizes` edges, and classify the link with author-type, content-type, media, platform, and reused/new topical tags",
+      "path": "skills/rei-ingest-markdown",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
