@@ -214,9 +214,31 @@ near-duplicates:
 rei custom-property entities tags --json
 ```
 
-From the JSON, collect every tag value present on any entity into a single deduplicated
-list (the `EXISTING_TAGS` vocabulary). If the command returns zero entities, the vocabulary
-is empty — proceed with freshly-minted tags.
+The output is an object of the shape:
+
+```json
+{
+  "count": <int>,
+  "entities": [ { ..., "properties": { "tags": "tag-one,tag-two,..." } }, ... ],
+  "property": "tags",
+  "value_type": "tag-set"
+}
+```
+
+If `count` is `0` (or `entities` is empty), the vocabulary is empty — proceed with
+freshly-minted tags. Otherwise extract every tag value across all entities into a single
+deduplicated list (the `EXISTING_TAGS` vocabulary). One-liner:
+
+```bash
+rei custom-property entities tags --json \
+  | jq -r '.entities[].properties.tags' \
+  | tr ',' '\n' \
+  | sed 's/^ *//; s/ *$//' \
+  | sort -u
+```
+
+Note: tags are stored as a single comma-separated string per entity (not a JSON array),
+which is why the `tr ','` split is needed.
 
 **Step 9b — Propose tags.** Based on the fetched content and the existing vocabulary,
 choose 3–7 tags that best describe the subject matter. Apply these rules in order:
