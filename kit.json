@@ -54,6 +54,12 @@
       "description": "Ingest a pre-converted markdown file (with frontmatter) into Rei — reuse or create a link from the source URL, save the full markdown as an archive note, summarize it into a separate summary note, wire them with `archives` and `summarizes` edges, and classify the link with author-type, content-type, media, platform, and reused/new topical tags",
       "path": "skills/rei-ingest-markdown",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-curate-ontology",
+      "description": "Build and maintain a Rei knowledge ontology — topics, predicates, and edges — scoped tightly to the user's actual use cases. Investigates what exists, reuses it, creates only what's missing, and deliberately refuses to model the whole world",
+      "path": "skills/rei-curate-ontology",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
