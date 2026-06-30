@@ -272,13 +272,27 @@ rei note new --topic TOPIC_ID --stdin --actor claude-code
 rei doc add ./PATH --topic TOPIC_ID --title "TITLE" --actor claude-code
 ```
 
-For existing artifacts, use the topic re-anchor commands:
+For existing artifacts (created earlier, or filed under a different anchor), re-anchor them
+onto the topic with the `set-topic` commands. These **move** the artifact's single anchor: it
+leaves its previous anchor and now appears under the topic. `TOPIC` may be a topic **key or a
+`topic_...` ID**:
 
 ```bash
-rei link set-topic LINK_ID TOPIC_ID --actor claude-code
-rei note set-topic NOTE_ID TOPIC_ID
-rei doc set-topic DOC_ID TOPIC_ID --actor claude-code
+rei link set-topic LINK_ID TOPIC --actor claude-code
+rei note set-topic NOTE_ID TOPIC
+rei doc set-topic DOC_ID TOPIC --actor claude-code
 ```
+
+Three things to get right when running these:
+
+- **Actor flag differs by command.** `link set-topic` and `doc set-topic` accept
+  `--actor claude-code`; `note set-topic` does **not** (the note re-anchor records no actor) —
+  passing `--actor` to it errors. The lines above reflect this.
+- **fzf fallback.** Omit the artifact ID and/or `TOPIC` to pick interactively from an fzf
+  list. When running this skill non-interactively, always pass both explicitly so nothing
+  blocks on a picker.
+- **Docs must be standalone.** `doc set-topic` moves only a *standalone* doc. A doc attached
+  to a note is moved by re-anchoring its parent note (`rei note set-topic`), not on its own.
 
 **`about` edges (semantic).** Assert that an artifact is about a topic when the user needs
 that semantic fact in the graph. This is separate from filing: an `about` edge does not move
