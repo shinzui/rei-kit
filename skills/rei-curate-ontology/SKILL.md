@@ -46,6 +46,22 @@ Activate when the user says things like:
   - `broader-than` — topic → topic, transitive, inverse of `narrower-than`
   - `narrower-than` — topic → topic, transitive, inverse of `broader-than`
   - `related-to` — topic → topic, symmetric (peers / cross-links)
+- **Classification vs. subsumption (read this twice — it's the #1 modeling mistake).** Two
+  *different* relationships that are constantly conflated:
+  - `broader-than`/`narrower-than` express **subject subsumption** — one *concept/subject* is
+    a broader field of study than another (`version-control` broader-than `git-forge`;
+    `frontend` broader-than `design-systems`). **Both ends are abstract subjects**, and the
+    narrower one is a *kind of subject*, never a concrete thing.
+  - **Classification** expresses that a *concrete thing* — a specific tool, product, library,
+    system, service, forge, model — **is an instance of** a type (`github` *is a* git forge;
+    `react` *is a* UI library; `astryx` *is a* design system). This is **not** subsumption.
+    Model it with an **`is-a`** predicate. `is-a` is **not** seeded by default — define it
+    once (Phase 4). **Never** attach a concrete instance to a category with `broader-than`.
+  - Litmus test: if the child is a *thing you could put a link/homepage on* (a named product,
+    tool, library), it's an **instance** → `is-a`. If the child is *another field/subject you'd
+    browse*, it's a **concept** → `broader-than`. Also classify distinct instances into their
+    *distinct correct types* — don't lump (React → `ui-libraries`, StyleX → `css-in-js`, not
+    both under one generic bucket).
 - **Inference** — query-time only. `rei topic related --include-inferred` and
   `rei topic tree --include-inferred` expand inverse/transitive facts without writing them
   back as edges. There is no OWL/SPARQL reasoning — semantics are intentionally minimal.
@@ -80,10 +96,13 @@ The hard part of this skill is restraint. Apply these rules at every step:
 1. **Understand the use case** — what to organize, and the in/out-of-scope boundary
 2. **Investigate the existing ontology** — topics, predicates, edges, validation
 3. **Survey the knowledge to be organized** — existing links, notes, docs, tags
-4. **Seed default predicates** — `rei ontology seed-predicates` (idempotent)
-5. **Design the minimal topic set** — reuse + the smallest set of new topics; confirm
+4. **Seed default predicates** — `rei ontology seed-predicates` (idempotent); define `is-a`
+   when the use case has concrete instances
+5. **Design the minimal topic set** — reuse + the smallest set of new topics; mark each as a
+   *concept* or an *instance*; confirm
 6. **Create missing topics** — `rei topic create`
-7. **Wire hierarchy & relations** — `broader-than` / `narrower-than` / `related-to` edges
+7. **Wire hierarchy, classification & relations** — `broader-than` between concepts, `is-a`
+   for instances, `related-to` for peers
 8. **Connect existing knowledge** — file existing artifacts under topics and/or assert `about` edges
 9. **Validate & review** — `rei ontology validate`, `rei topic tree`, `rei topic related`
 10. **Summary & maintenance guidance**
@@ -171,23 +190,47 @@ rei ontology seed-predicates
 ```
 
 This guarantees `about`, `broader-than`, `narrower-than`, and `related-to` are available for
-Phases 7–8. Only consider defining a **custom** predicate if the use case needs a
-relationship the defaults can't express (e.g., `forked-from` for forge lineage). If so,
-define it minimally and with type constraints:
+Phases 7–8.
+
+**Define `is-a` whenever the use case has concrete instances (it almost always does).**
+Nearly every real ontology mixes *subjects* (fields you browse) with *instances* (the actual
+tools, products, libraries, systems you track). Instances must be classified with `is-a`,
+which is **not** seeded. Define it once, up front:
 
 ```bash
-rei predicate define forked-from --label "Forked from" \
-  --description "Source project/forge is a fork of the target" \
+rei predicate define is-a --label "Is a" \
+  --description "Source is a concrete instance/member of the target type or class" \
   --source-types topic --target-types topic --actor claude-code
 ```
 
-Push back on inventing predicates that won't be reused. A predicate used by one edge is
-usually a sign the relationship should have been an `about` edge or an attachment.
+This is a *reusable backbone* predicate — every instance→type edge uses it — so it is
+emphatically **not** a single-use predicate. Reach for it before ever attaching a named thing
+to a category with `broader-than`.
+
+Beyond `is-a`, define a **custom** predicate when the use case needs a recurring relationship
+the defaults can't express — e.g., `built-with` ("this system is built on that technology",
+used for every design-system→framework edge) or `forked-from` for forge lineage. Define it
+minimally and with type constraints:
+
+```bash
+rei predicate define built-with --label "Built with" \
+  --description "Source is implemented on top of the target technology" \
+  --source-types topic --target-types topic --actor claude-code
+```
+
+Push back only on predicates that will be used by exactly *one* edge with no prospect of
+reuse — those usually should have been an `about` edge or an attachment. A predicate reused
+across many edges (like `is-a`) is exactly what you want.
 
 ### Phase 5: Design the Minimal Topic Set
 
 Produce the smallest topic set that covers the in-scope use case. For each candidate topic,
-decide: **reuse** an existing topic, **create** a new one, or **defer** it.
+decide: **reuse** an existing topic, **create** a new one, or **defer** it — and label it a
+**concept** (a browsable subject) or an **instance** (a named thing). This label determines
+its edges: concepts hang off `broader-than`; instances attach to their type via `is-a` (and
+may carry `built-with`/`about`/attachments). If an instance's type doesn't exist yet as a
+concept topic, add that concept too — and classify distinct instances into distinct correct
+types rather than one generic bucket.
 
 Apply the Scoping Discipline rules. For new topics, choose:
 - `KEY` — stable, lowercase, hyphen-separated, specific (`github`, `gitdot`, `forge-features`).
@@ -201,15 +244,20 @@ Present the design as a table and **confirm before creating**:
 Proposed ontology (scoped to: <boundary restated>)
 
 REUSE (already exist):
-- github — GitHub
-- forge-features — Git Forge Features
+- git-forge — Git Forge / Hosting Provider   (a CONCEPT / type)
+- github — GitHub                            (a concrete forge — an INSTANCE)
 
 CREATE (new):
-- gitdot — gitdot — "Neovim-native git forge the user tracks"
+- gitdot — gitdot — "Neovim-native git forge the user tracks"  (an INSTANCE)
 
-HIERARCHY:
-- forge-features  broader-than  github
-- forge-features  broader-than  gitdot
+CONCEPT HIERARCHY (broader-than — subjects/concepts only):
+- version-control  broader-than  git-forge
+
+CLASSIFICATION (is-a — a concrete forge → its type; NOT broader-than):
+- github  is-a  git-forge
+- gitdot  is-a  git-forge
+
+PEERS (related-to):
 - github  related-to  gitdot
 
 OUT OF SCOPE (deliberately NOT modeling): gitlab, bitbucket, sourcehut, gitea, forgejo,
@@ -238,19 +286,28 @@ rei topic create KEY "LABEL" --description "DESCRIPTION" --actor claude-code
 
 Capture each new `topic_...` ID from the output. Skip any topic the user chose to defer.
 
-### Phase 7: Wire Hierarchy & Relations
+### Phase 7: Wire Hierarchy, Classification & Relations
 
-Add the approved edges. Use topic IDs (or keys) on both ends:
+Add the approved edges. **`rei edge add` requires topic `topic_...` IDs, not keys** — capture
+the IDs from Phase 6's `rei topic create` output and use those (keys are rejected with an
+"is not an allowed source type" error).
 
 ```bash
-# Hierarchy: broader topic -[broader-than]-> narrower topic
+# CONCEPT hierarchy: broader concept -[broader-than]-> narrower concept (BOTH ends are subjects)
 rei edge add --from BROADER_TOPIC --to NARROWER_TOPIC --predicate broader-than --actor claude-code
+
+# CLASSIFICATION: a concrete instance -[is-a]-> its type/category (NOT broader-than)
+rei edge add --from INSTANCE_TOPIC --to TYPE_TOPIC --predicate is-a --actor claude-code
 
 # Peers / cross-links (symmetric)
 rei edge add --from TOPIC_A --to TOPIC_B --predicate related-to --actor claude-code
 ```
 
-Keep it shallow (rule 3). Add only the inverse direction you mean — `broader-than` already
+**Never use `broader-than` to attach a concrete instance** (a named tool, product, library,
+system, service, model) to a category — that is classification, so use `is-a`. Reserve
+`broader-than` for concept→narrower-concept only. Getting this wrong now is the single most
+expensive thing to unwind later, because it pollutes the browsable subject tree with
+instances. Keep it shallow (rule 3). Add only the inverse direction you mean — `broader-than` already
 implies `narrower-than` at query time via inference, so don't create both directions
 manually. After wiring, you can preview the shape:
 
@@ -356,8 +413,9 @@ After completing the workflow, provide a summary:
 - Deferred (add later when there's content): <key>, ...
 
 ### Relations
-- <broader> broader-than <narrower>
-- <a> related-to <b>
+- <broader-concept> broader-than <narrower-concept>   (subjects)
+- <instance> is-a <type>                               (classification)
+- <a> related-to <b>                                   (peers)
 
 ### Knowledge connected
 - <N> links, <M> notes, and <K> docs wired to topics (attachments + `about` edges)
@@ -390,9 +448,16 @@ After completing the workflow, provide a summary:
   for the same pair — one implies the other via `--include-inferred`.
 - **Seeding is idempotent**: `rei ontology seed-predicates` is safe to run anytime; it
   reports already-present predicates and never overwrites incompatible ones.
-- **Don't define single-use predicates**: if a relationship is used by one edge, it probably
-  should have been an `about` edge or an attachment. Defaults (`about`, `broader-than`,
-  `narrower-than`, `related-to`) cover most needs.
+- **Classify instances with `is-a`, subsume concepts with `broader-than`**: a named thing
+  (tool/product/library/system) relates to its category by classification (`is-a`), never by
+  subject subsumption (`broader-than`). This is the most important rule in the skill — see
+  "Classification vs. subsumption" in Key Concepts.
+- **Define reusable predicates; avoid single-use ones**: `is-a` (instance → type) is a
+  *standard* predicate to define whenever the use case has concrete instances — it's reused by
+  every classification edge, so it is not single-use. A genuine recurring relationship the
+  defaults can't express (e.g., `built-with`) also earns its place. What to avoid is a
+  predicate used by exactly one edge with no prospect of reuse — that should have been an
+  `about` edge or an attachment.
 - **Empty topics are a smell**: a topic with no attachments or `about` edges is usually
   premature. Defer it until the user has content for it.
 - **Maintenance is part of the job**: extending an existing ontology means pruning too —
