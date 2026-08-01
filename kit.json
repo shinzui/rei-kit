@@ -77,6 +77,13 @@
       "version": "1.1.0",
       "path": "skills/rei-curate-ontology",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-bookmark-url",
+      "description": "Bookmark a URL into Rei by filing it under the right topic — survey the existing ontology, reuse an existing topic wherever one fits, create only the topics the bookmark genuinely needs (classified with instance-of / broader-than, named from Schema.org where a standard term exists), anchor the link to the topic, and assert `about` associations for secondary subjects",
+      "version": "1.0.0",
+      "path": "skills/rei-bookmark-url",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
