@@ -56,6 +56,12 @@
       "files": ["SKILL.md"]
     },
     {
+      "name": "rei-note-from-url-markdown",
+      "description": "Capture a page's markdown snapshot into Rei as a single note — reuse or create a link for the source URL from the file's frontmatter, store the full markdown verbatim as one note anchored to an intention, connect them with a `captured-from` edge, and tag the note with reused/new topical tags. No archive/summary split, no link classification",
+      "path": "skills/rei-note-from-url-markdown",
+      "files": ["SKILL.md"]
+    },
+    {
       "name": "rei-curate-ontology",
       "description": "Build and maintain a Rei knowledge ontology — topics, predicates, and edges — scoped tightly to the user's actual use cases. Investigates what exists, reuses it, creates only what's missing, and deliberately refuses to model the whole world",
       "path": "skills/rei-curate-ontology",
