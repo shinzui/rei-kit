@@ -80,7 +80,7 @@
     },
     {
       "name": "rei-bookmark-url",
-      "description": "Bookmark a URL into Rei by filing it under the right topic — survey the existing ontology, reuse an existing topic wherever one fits, create only the topics the bookmark genuinely needs (classified with instance-of / broader-than, named from Schema.org where a standard term exists), anchor the link to the topic, and assert `about` associations for secondary subjects",
+      "description": "Bookmark a URL into Rei and grow the ontology to hold it — work out every subject the page covers, reuse the topics that already cover them, create properly-wired topics for the ones that don't (instance-of their type, placed under a parent concept, with a canonical external reference), define any missing predicate from the Schema.org vocabulary, anchor the link to its primary topic, and assert `about` associations for the rest",
       "version": "1.0.0",
       "path": "skills/rei-bookmark-url",
       "files": ["SKILL.md"]
