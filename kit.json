@@ -84,6 +84,13 @@
       "version": "1.0.0",
       "path": "skills/rei-bookmark-url",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-file-temp-note",
+      "description": "File a temporary markdown note into Rei — analyze its content, propose the anchoring intention (or topic), category, reused/new tags, and applicable note custom properties, place it in the ontology with reused/created topics, `about` associations, and edges to referenced links and notes, verify the stored content, then delete the temporary file",
+      "version": "1.0.0",
+      "path": "skills/rei-file-temp-note",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
