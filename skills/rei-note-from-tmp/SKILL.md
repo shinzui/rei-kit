@@ -1,10 +1,10 @@
 ---
-name: rei-file-temp-note
+name: rei-note-from-tmp
 description: File a temporary markdown note into Rei — analyze its content, propose the intention (or topic) to anchor it to, a category, topical tags, and applicable note custom properties, place it in the ontology (reuse or create topics, `about` associations, edges to the links and notes it references), create the note, verify the stored content, and then delete the temporary file.
 allowed-tools: AskUserQuestion, Bash, Read
 ---
 
-# Rei File Temp Note
+# Rei Note From Tmp
 
 This skill takes a **temporary markdown note** — a scratch file written in an editor, dumped by
 another tool, or drafted by an agent — and files it into Rei properly. It reads the note, works
@@ -25,7 +25,7 @@ Activate when the user says things like:
 - "Add this temp note to Rei and delete the file"
 - "Figure out which intention this note belongs to and save it"
 - "Tag and file this markdown note, then clean up the draft"
-- "/rei-file-temp-note /tmp/note-2026-09-12.md"
+- "/rei-note-from-tmp /tmp/note-2026-09-12.md"
 
 ## Key Concepts
 
