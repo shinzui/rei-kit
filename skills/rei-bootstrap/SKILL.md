@@ -1,566 +1,183 @@
 ---
 name: rei-bootstrap
-description: Interactively bootstrap intentions, habits, and reflections for Rei personal coaching. Use when the user wants to create a new life goal, project, or intention hierarchy. Guides through structured questions to define root intentions, break them into actionable children, establish supporting habits, set up focus areas with cycles, and configure reflection practices.
+description: Interactively bootstrap a Rei intention hierarchy — a root intention with context, category, and optional project scope, 2–5 child intentions, support links, supporting habits, focus areas and a focus cycle, recurring reflections, and agent coaching guidance — creating everything after one confirmation and verifying it by reading back.
 allowed-tools: AskUserQuestion, Bash, Read
 ---
 
 # Rei Bootstrap
 
-This skill helps users create a well-structured intention hierarchy with supporting habits, focus areas, cycles, and reflection practices through guided questioning.
+Turns a goal the user describes into a structured Rei setup: root intention → children, plus
+the habits, focus rhythm, reflections, and coaching guidance that support it. Use
+`/rei-bootstrap-habit` when the user only wants a single habit, and follow its guidance for
+designing habits in depth.
 
-## When to Use
+## Key Concepts
 
-Activate when the user says things like:
-- "Help me bootstrap a new intention"
-- "I want to set up a new goal/project"
-- "Let's create an intention with habits"
-- "Bootstrap my intentions"
+Keep these distinct when proposing structure — they are easy to conflate:
 
-## Workflow Overview
+- **Intention** — a goal with a `--horizon` (`5d`, `2w`, `3m`, `1q`, `2y`, `1decade`). Active
+  by default; `--future` defers it (hidden from daily views, blocks operational actions,
+  activate later with `rei intention activate ID`). Deferring a parent cascades to children.
+- **Context** — the life domain label (`work`, `personal`). Root intentions only; children
+  inherit it. `rei intention contexts` lists labels in use, displayed with an `@` prefix —
+  pass the label **without** the `@`.
+- **Category** — the *type* of activity (`meeting`, `learning/reading`). May carry note
+  guidance and property bindings that auto-set custom properties on entities assigned to it
+  (see `rei category show SLUG`). Can map to a focus area.
+- **Focus area** — the *nature* of a day's activity (Study, Create, Play); one intention spans
+  several. Selected per day within a **cycle** (only one active at a time).
+- **Support** — an informational cross-hierarchy link ("Exercise" supports "Focus at work"),
+  not a dependency.
+- **Project** — a durable subject modeled as a typed topic. Scoping the root intention to a
+  project passes the scope to all descendants and their work. Software projects come from Mori
+  via `rei project sync mori://NS/PROJECT`; anything else via `rei project create`.
 
-1. **Understand the Goal** - Ask about the high-level intention
-2. **Define the Root Intention** - Clarify title, horizon, and success criteria
-3. **Break Down into Children** - Identify 2-5 sub-intentions
-4. **Set Up Focus Areas** - Import or create focus areas for daily time allocation
-5. **Establish Habits** - Define supporting daily/weekly practices with focus alignment
-6. **Start a Cycle** (Optional) - Begin tracking daily focus selections
-7. **Set Up Reflections** - Configure review cadence
-8. **Agent Guidance** (Optional) - Configure how the agent should coach this intention
+## Workflow
 
-## Instructions for Claude
+Always use `rei --actor claude-code <command>` for writes and pass every ID explicitly —
+omitted IDs open fzf pickers that hang the run. Most of these commands can print an error and
+still exit `0`, so capture each created ID from the output and rely on the Verify phase.
 
-### Phase 1: Discovery
+### 1. Discover
 
-Use AskUserQuestion to understand what the user wants to achieve:
+Understand the goal, why it matters, the timeframe, and whether it starts now or later. Ask
+only what the user hasn't said. Then survey what already exists so you reuse rather than
+duplicate:
 
-```
-Question: "What goal or project would you like to work on?"
-Header: "Goal"
-Options:
-- A life area (health, career, relationships, learning)
-- A specific project with a deadline
-- A skill or habit I want to develop
-- Something else
-```
-
-Follow up to get specifics about their intention.
-
-### Phase 2: Root Intention
-
-Ask about the planning horizon:
-
-```
-Question: "What timeframe are you thinking for this intention?"
-Header: "Horizon"
-Options:
-- Short-term (days to weeks)
-- Medium-term (1-3 months)
-- Long-term (quarters to years)
-- Ongoing/no specific end
-```
-
-Then ask about the starting status:
-
-```
-Question: "Should this intention be active now or deferred for later?"
-Header: "Status"
-Options:
-- Active now (start working on it immediately)
-- Future (plan it now, activate later when ready)
-```
-
-Then create the root intention:
 ```bash
-# For Active intention (default)
-rei intention create "TITLE" --horizon HORIZON --actor claude-code
-
-# For Future intention (use --future flag)
-rei intention create "TITLE" --horizon HORIZON --future --actor claude-code
-```
-
-Future intentions are useful for planning projects you're not ready to start yet. They:
-- Won't appear in daily views or reviews until activated
-- Allow structural setup (children, habits) but block operational actions
-- Can be activated later with `rei intention activate <ID>`
-
-#### Context Association
-
-After creating the root intention, ask about context:
-
-**First, check for existing contexts:**
-```bash
+rei intention list --roots --all -s "KEYWORD" --json   # an intention for this goal may exist
 rei intention contexts
-```
-
-```
-Question: "Would you like to associate this intention with a context?"
-Header: "Context"
-Options:
-- [If contexts exist, list them as options, e.g., "work", "personal"]
-- Create a new context
-- Skip (no context)
-```
-
-If associating with an existing context or creating a new one:
-```bash
-rei intention set-context <INTENTION_ID> "CONTEXT_NAME"
-```
-
-**Note**: Context can only be set on root intentions. Child intentions inherit context from their root. Common contexts include:
-- `work` - Professional responsibilities
-- `personal` - Personal development and life goals
-- `family` - Family-related goals
-- `health` - Health and fitness
-- `learning` - Education and skill development
-
-### Phase 3: Child Intentions
-
-Ask the user to break down their goal:
-
-```
-Question: "What are the key areas or milestones needed to achieve this?"
-Header: "Breakdown"
-Options:
-- Let me describe 2-3 key areas
-- Help me brainstorm the breakdown
-- I already have a clear structure in mind
-```
-
-For each child intention identified, create it with the parent:
-```bash
-rei intention create "CHILD_TITLE" --parent PARENT_ID --horizon HORIZON --actor claude-code
-```
-
-### Phase 3.25: Category Setup (Optional)
-
-Categories classify the *type* of activities (meeting, coding, reading), distinct from context (life domain) and focus (daily activity nature). They enable filtering and analysis of actions and notes.
-
-**First, check for existing categories:**
-```bash
-rei category tree
-```
-
-**If categories already exist**, acknowledge and offer to use or extend them:
-```
-Question: "Would you like to use existing categories or create new ones for this intention?"
-Header: "Categories"
-Options:
-- Use existing categories (I'll assign them as needed)
-- Create activity-specific categories for this intention
-- Skip categories for now
-```
-
-**If no categories exist**, offer to set them up:
-```
-Question: "Would you like to establish activity categories for this intention?"
-Header: "Categories"
-Options:
-- Yes, help me create categories
-- Skip for now (can add later with `rei category create`)
-```
-
-If creating categories, guide the user:
-```bash
-# Create a parent category (optional)
-rei category create "learning" --description "Learning activities" --actor claude-code
-
-# Create child categories
-rei category create "reading" --parent learning --description "Reading sessions" --actor claude-code
-rei category create "coding" --parent learning --description "Hands-on coding practice" --actor claude-code
-```
-
-**Common category patterns:**
-| Intention Type | Suggested Categories |
-|---------------|---------------------|
-| Learning goal | reading, coding, video-courses, mentoring |
-| Work project | meeting, coding, review, planning |
-| Health goal | exercise, meal-prep, tracking |
-| Creative project | research, drafting, editing, publishing |
-
-**Optionally link categories to focus areas:**
-```bash
-rei category link-focus "learning/reading" <READ_FOCUS_ID>
-rei category link-focus "learning/coding" <STUDY_FOCUS_ID>
-```
-
-After creating categories, optionally assign the root intention to a category:
-```bash
-rei intention set-category <INTENTION_ID> "learning"
-```
-
-### Phase 3.5: Support Relationships (Optional)
-
-After creating child intentions, ask if any intentions support other existing goals:
-
-```
-Question: "Do any of these intentions support other goals you're working on?"
-Header: "Supports"
-Options:
-- Yes, let me set up some support relationships
-- Skip for now (I can add supports later)
-```
-
-Support relationships are informational links (not dependencies) that help track how intentions relate across different hierarchies. For example:
-- "Learn Haskell" might **support** "Build personal website" (learning enables building)
-- "Exercise regularly" might **support** "Improve focus at work"
-
-If the user wants to set up supports:
-
-```bash
-# Check what other intentions exist
-rei intention list --all
-
-# Add a support relationship
-rei support add --from <SUPPORTING_ID> --to <SUPPORTED_ID> --note "DESCRIPTION" --actor claude-code
-```
-
-**Note**: Supports can be declared on both Active and Future intentions. Use the interactive FZF picker (`rei support add`) which lets you press `ctrl-f` to toggle between active-only and all intentions.
-
-### Phase 4: Focus Areas
-
-Focus areas represent categories of activity for daily time allocation. They describe the *nature* of activities (not goals).
-
-**IMPORTANT: Always check for existing focus areas first and skip this phase if they exist.**
-
-```bash
+rei category list --flat --descriptions --json
 rei focus list
-```
-
-**If focus areas already exist**, acknowledge them and proceed to Phase 5 (Habits):
-```
-I see you already have focus areas set up:
-  ⌘ Connect, ❥ Read, ❖ Study, ✿ Play, ✽ Create
-
-We'll use these for habit alignment. Moving on to habits...
-```
-
-**Only if no focus areas exist**, ask if the user wants to set them up:
-
-```
-Question: "Would you like to set up focus areas for daily time tracking?"
-Header: "Focus"
-Options:
-- Import Anatomy of Equanimity template (Connect, Read, Study, Play, Create)
-- Create custom focus areas
-- Skip focus areas for now
-```
-
-If importing the template:
-```bash
-rei focus import anatomy-of-equanimity
-```
-
-If creating custom focus areas, ask about their focus categories and create them:
-```bash
-rei focus create \
-  --name "NAME" \
-  --symbol "SYMBOL" \
-  --description "DESCRIPTION" \
-  --actor claude-code
-```
-
-**Note**: Focus describes the nature of an activity, not the goal. An intention like "Learn Haskell" spans multiple focuses:
-- **Study** day: Read a chapter on monads
-- **Create** day: Build a project applying what you learned
-- **Play** day: Experiment with different approaches
-
-### Phase 5: Habits
-
-Ask about supporting practices:
-
-```
-Question: "What regular practices would support this intention?"
-Header: "Habits"
-Options:
-- Daily practices (morning routine, evening review)
-- Weekly practices (planning, review sessions)
-- Both daily and weekly
-- Skip habits for now
-```
-
-Create habits with appropriate schedules, linking them to the root intention:
-```bash
-# Daily habit
-rei habit create --name "NAME" --purpose "PURPOSE" --daily --intention <ROOT_INTENTION_ID> --actor claude-code
-
-# Weekly on a single day
-rei habit create --name "NAME" --purpose "PURPOSE" --weekly monday --intention <ROOT_INTENTION_ID> --actor claude-code
-
-# Weekly on multiple days (e.g., Mon, Wed, Fri)
-rei habit create --name "NAME" --purpose "PURPOSE" --weekly-on mon,wed,fri --intention <ROOT_INTENTION_ID> --actor claude-code
-```
-
-To change a habit's schedule after creation, use the `update-schedule` command:
-```bash
-rei habit update-schedule <HABIT_ID> --daily
-rei habit update-schedule <HABIT_ID> --weekly friday
-rei habit update-schedule <HABIT_ID> --weekly-on tue,thu
-```
-
-**Note**: The `--intention` flag associates the habit with the intention it supports. This enables tracking which habits contribute to which goals.
-
-**If focus areas were set up**, ask which focus each habit aligns with:
-
-```
-Question: "Which focus area does '[HABIT_NAME]' align with?"
-Header: "Habit Focus"
-Options:
-- ⌘ Connect (social connection, staying informed)
-- ❥ Read (absorbing information)
-- ❖ Study (deep learning, skill building)
-- ✿ Play (recreation, enjoyment)
-- ✽ Create (making new things)
-```
-
-**Note**: Focus assignment for habits is managed through the cycle system, not directly on habits. Habits have a consistent nature, so focus alignment is conceptual. Examples:
-- "Morning reading" → Read
-- "Code practice" → Study
-- "Music practice" → Play or Create
-- "Journal writing" → Create
-
-### Phase 6: Cycles (Optional)
-
-Cycles are bounded time periods for tracking daily focus selections. If focus areas were set up (or already exist), offer to start a cycle.
-
-**IMPORTANT: Always check for an active cycle first and skip this phase if one exists.**
-
-```bash
 rei cycle status
+rei project list
 ```
 
-**If a cycle is already active**, acknowledge it and proceed to Phase 7 (Reflections):
-```
-You already have an active cycle:
-  "January Focus" - Day 3/10 (7 days remaining)
-  Today's focus: ❖ Study
+### 2. Design the structure
 
-We'll continue with this cycle. Moving on to reflections...
-```
+Draft, with the user, everything below. Each section except the root is optional — skip what
+the user doesn't want, and skip focus setup if focus areas exist, and cycle setup if a cycle
+is active.
 
-**Only if no active cycle exists** and focus areas are available, offer to start one:
+- **Root**: title, horizon, active/future, context (reuse an existing label), category, optional
+  deadline (`--deadline YYYY-MM-DD`), optional project scope.
+- **Children**: 2–5 milestones or areas, each with a horizon no longer than the root's.
+- **Categories**: reuse existing ones; create new ones only for activity types this goal
+  introduces, optionally mapped to a focus (`-f FOCUS_ID`).
+- **Supports**: links from/to existing intentions found in Phase 1.
+- **Habits**: name, purpose, schedule, and which intention each supports. Fixed schedules
+  (`--daily`, `--weekly DAY`, `--weekly-on mon,wed,fri`, `--monthly N`, `--every N`), flexible
+  ones (`--free-weekly N`, ...), cue-based (`--cue`), or break habits (`--break`) — see
+  `/rei-bootstrap-habit` for the design detail.
+- **Focus areas** (only if none exist): `rei focus templates` / `import anatomy-of-equanimity`,
+  or custom areas.
+- **Cycle** (only if none active): length (7–10 days suits beginners) and optional name.
+- **Reflections**: recurring daily and/or weekly schedules, with prompts tailored to the goal
+  and filtered by the root's context.
+- **Guidance**: coaching style, success indicators, review questions, action patterns,
+  constraints, and motivation — synthesized from the conversation.
 
-```
-Question: "Would you like to start a focus cycle to track daily focus selections?"
-Header: "Cycle"
-Options:
-- Yes, start a 10-day cycle
-- Yes, start a 7-day cycle (weekly)
-- Yes, with a custom length
-- Skip cycles for now
-```
+### 3. Confirm
 
-If starting a cycle:
+Present the complete plan as a tree (root, children, categories, supports, habits with
+schedules, focus/cycle, reflection schedules, guidance summary) and ask for approval once
+before creating anything. Apply edits and re-show if the user adjusts.
+
+### 4. Create
+
+In dependency order, capturing each `intention_…`, `habit_…`, `focus_…` ID.
+
 ```bash
-# Start a cycle with optional name
-rei cycle start --length 10 --name "CYCLE_NAME" --actor claude-code
+# categories first, so intentions can be assigned at creation
+rei --actor claude-code category create NAME [-p PARENT_SLUG] -d "DESCRIPTION" [-f FOCUS_ID]
 
-# Start a 7-day cycle
-rei cycle start --length 7 --actor claude-code
-```
+# root, then children
+rei --actor claude-code intention create "TITLE" --horizon 3m [--future] \
+  [-c CONTEXT] [--category SLUG] [--deadline YYYY-MM-DD]
+rei --actor claude-code intention create "CHILD TITLE" -p ROOT_ID --horizon 1m [--category SLUG]
 
-Explain the daily workflow:
-```
-Each day of the cycle, you'll select your focus:
-  rei cycle select-focus
+# project scope (optional)
+rei --actor claude-code project create KEY --label "LABEL" --description "..." --json   # or: rei project sync mori://NS/PROJECT
+rei --actor claude-code project scope add KEY ROOT_ID --entity-type intention --json
 
-This creates a rhythm of intentional daily focus. You can:
-  - Check progress: rei cycle status
-  - Complete the cycle: rei cycle complete
-  - Start a new cycle after completion
-```
+# supports
+rei --actor claude-code support add -f SUPPORTING_ID -t SUPPORTED_ID -n "HOW IT HELPS"
 
-**Why cycles matter**: Cycles create accountability and rhythm. Instead of vague intentions to "balance" focus areas, you make one conscious choice each day: "Today, I focus on Study."
+# focus areas (only if none exist) and cycle (only if none active)
+rei --actor claude-code focus import anatomy-of-equanimity
+rei --actor claude-code focus create -n "NAME" -s "SYMBOL" -d "DESCRIPTION"
+rei --actor claude-code category link-focus SLUG FOCUS_ID
+rei --actor claude-code cycle start -l 10 -n "NAME"
 
-### Phase 7: Reflection Setup
+# habits, each linked to the intention it supports
+rei --actor claude-code habit create -n "NAME" -p "PURPOSE" --daily -i INTENTION_ID
 
-Ask about reflection preferences:
+# recurring reflections
+rei --actor claude-code reflect schedule daily -p "PROMPT" -c CONTEXT
+rei --actor claude-code reflect schedule weekly -d sunday -p "PROMPT" -c CONTEXT
 
-```
-Question: "How would you like to reflect on progress?"
-Header: "Reflection"
-Options:
-- Daily quick check-ins
-- Weekly deeper reviews
-- Both daily and weekly
-- I'll set up reflections later
-```
-
-Guide the user on using:
-```bash
-rei reflect today --prompt "PROMPT" --actor claude-code
-rei reflect week --prompt "PROMPT" --actor claude-code
-```
-
-### Phase 8: Agent Guidance (Optional)
-
-After completing the core setup, offer to configure agent guidance for the root intention. This guidance helps the agent provide better coaching during future reviews and check-ins.
-
-```
-Question: "Would you like to set up agent guidance for this intention?"
-Header: "Guidance"
-Options:
-- Yes, help me configure how the agent should coach me
-- Skip for now (I can add it later with `rei intention guidance`)
-```
-
-If the user wants guidance, ask clarifying questions to understand:
-
-```
-Question: "What coaching approach would work best for you with this intention?"
-Header: "Style"
-Options:
-- Encouraging and supportive (celebrate wins, gentle on setbacks)
-- Direct and challenging (push me, call out excuses)
-- Analytical and structured (focus on metrics, patterns)
-- Flexible and exploratory (adapt based on what's working)
-```
-
-Then ask about specific considerations:
-
-```
-Question: "Are there any constraints or things to avoid when coaching this intention?"
-Header: "Constraints"
-Options:
-- Time constraints (limited hours available)
-- Energy/health considerations
-- Budget or resource limits
-- Let me describe specific constraints
-```
-
-#### Generating Guidance Content
-
-Based on the entire conversation, synthesize guidance that includes:
-
-1. **Coaching Style** - How the agent should approach reviews (from user's preference + context)
-2. **Success Indicators** - What progress looks like based on the child intentions and habits
-3. **Review Focus Areas** - Key questions to ask during check-ins
-4. **Action Patterns** - Preferred approaches based on habits and breakdown structure
-5. **Constraints** - Boundaries and limitations to respect
-6. **Motivation Context** - Why this intention matters (captured from Phase 1 discovery)
-
-Create the guidance using the conversation context:
-```bash
-rei intention guidance <INTENTION_ID> --content "$(cat <<'EOF'
+# guidance
+rei --actor claude-code intention guidance ROOT_ID --stdin <<'EOF'
 ## Coaching Style
-[Based on user's preference - e.g., "Be encouraging and celebrate small wins.
-This is a long-term health goal, so focus on consistency over perfection."]
-
 ## Success Indicators
-[Derived from child intentions - e.g., "Progress looks like:
-- Regular workout sessions (3+ per week)
-- Improved energy levels reported in reflections
-- Completion of quarterly milestones"]
-
 ## Review Focus Areas
-[Questions for check-ins - e.g., "During reviews, explore:
-- What worked well this period?
-- What got in the way?
-- Is the current pace sustainable?
-- Any habits need adjustment?"]
-
 ## Action Patterns
-[From habits and breakdown - e.g., "User prefers morning workouts.
-Weekly planning happens on Sundays. Focus on building one habit at a time."]
-
 ## Constraints
-[From user input - e.g., "Limited to 30-minute sessions due to schedule.
-Avoid high-impact exercises due to knee issues."]
-
 ## Motivation Context
-[From discovery - e.g., "User wants to improve health to have more energy
-for family activities and set a good example for kids."]
 EOF
-)"
 ```
 
-**Important**: The guidance should be specific enough to help the agent provide personalized coaching, but flexible enough to adapt as the intention evolves. Focus on the "why" and "how" rather than rigid rules.
+Set context or category after creation with `rei --actor claude-code intention set-context -i ID CONTEXT` and
+`rei --actor claude-code intention set-category -i ID SLUG`. If a step fails, report it and continue with
+independent steps; don't create children under a root that failed.
+
+### 5. Verify
+
+```bash
+rei intention show ROOT_ID --json \
+  | jq '{intention: .intention | {intentionId, title, status, horizon, deadline},
+         categorySlug, children: [.children[] | {intentionId, title, status}],
+         habits: [.habits[]?], supports: [.supports[]?]}'
+rei intention list --roots --all -c CONTEXT --json | jq -r '.[].id' | grep ROOT_ID
+rei habit list --json | jq -c --arg r ROOT_ID '.[] | select(.intentionId == $r) | {habitId, name, scheduleType}'
+rei project scope list KEY            # if scoped
+rei cycle status
+rei reflect pending
+```
+
+Check each planned entity against what came back; retry a missing write once, otherwise report
+it. Habits linked to children are found by filtering on that child's ID.
 
 ## Output Format
-
-After bootstrapping, provide a summary:
 
 ```
 ## Bootstrap Complete
 
 ### Root Intention
-- **Title**: [title]
-- **ID**: [id]
-- **Horizon**: [horizon]
-- **Status**: [Active/Future]
-- **Context**: [context name, or "None" if skipped]
+- <title> (<intention_id>) — horizon <h>, <active/future>, context <ctx>, category <slug>
+- Project: <key or "none">
 
-### Child Intentions
-1. [child1] (ID: [id])
-2. [child2] (ID: [id])
-...
+### Children
+1. <title> (<id>) — <horizon>
 
-### Support Relationships
-- [If configured]: [intention1] → supports → [intention2] (note: "[note]")
-- [If skipped]: Not configured (add later with `rei support add`)
+### Supports / Categories / Focus & Cycle
+- <supporting> → <supported> ("<note>")
+- Categories: <created or reused slugs>
+- Focus: <existing / imported / custom / skipped>; Cycle: <existing "<name>" / started <name> (<n> days) / skipped>
 
-### Categories
-- [If already existed]: Using existing categories
-- [If created]: [parent] (focus: [focus])
-  - [parent]/[child1] (focus: [focus])
-  - [parent]/[child2] (focus: [focus])
-- [If skipped]: Not configured (add with `rei category create`)
+### Habits
+- <name> (<schedule>) → <intention title>
 
-### Focus Areas
-- [If already existed]: Using existing focus areas (⌘ Connect, ❥ Read, ❖ Study, ✿ Play, ✽ Create)
-- [If imported]: Anatomy of Equanimity (⌘ Connect, ❥ Read, ❖ Study, ✿ Play, ✽ Create)
-- [If custom]: [list of custom focus areas]
-- [If skipped]: Not configured (add later with `rei focus import anatomy-of-equanimity`)
+### Reflections & Guidance
+- Scheduled: <daily / weekly on <day>>
+- Guidance: <style summary or "not set">
 
-### Habits Created
-- [habit1] (daily) → linked to [root intention], focus: [focus]
-- [habit2] (weekly on Monday) → linked to [root intention], focus: [focus]
-- [habit3] (weekly on Mon, Wed, Fri) → linked to [root intention], focus: [focus]
-
-### Active Cycle
-- [If already existed]: Using existing cycle "[cycle name]" - [days remaining] days remaining
-- [If started]: [cycle name] - [length] days starting [date]
-- [If skipped]: Not started (start later with `rei cycle start --length 10`)
-
-### Reflection Cadence
-- Daily: [description]
-- Weekly: [description]
-
-### Agent Guidance
-- [If configured]: Guidance set with [coaching style] approach
-- [If skipped]: Not configured (add later with `rei intention guidance <ID>`)
+### Failed / Skipped
+- <item — reason>
 
 ### Next Steps
-1. [If Future status]: When ready to start, activate: `rei intention activate <ID>`
-2. [If cycle started]: Select today's focus: `rei cycle select-focus`
-3. Record your first action: `rei action record --intention ID`
-4. Start your first reflection: `rei reflect today`
-5. [If guidance set]: Review and refine guidance: `rei intention guidance <ID>`
+- <if future> Activate when ready: `rei intention activate <id>`
+- <if cycle> Pick today's focus: `rei cycle select-focus FOCUS_ID`
+- Record a first action: `rei action record -i <id> "DESCRIPTION"`
+- See it in context: `rei today` / `rei tomorrow`
 ```
-
-## Important Notes
-
-- Always confirm with the user before creating entities
-- **Always include `--actor claude-code`** on all entity creation commands to track that Claude created them
-- Use horizons that match the scope (e.g., `3m` for quarterly goals, `1y` for annual)
-- Keep habit names concise and action-oriented
-- **Always link habits to their supporting intention** using `--intention <ID>` when creating habits
-- Habits can also be linked/unlinked later with `rei habit link-intention` and `rei habit unlink-intention`
-- Suggest realistic reflection cadences based on the user's goals
-- **Always ask about context association** for root intentions - check existing contexts with `rei intention contexts`
-- **Skip focus area setup if focus areas already exist** - check with `rei focus list` first
-- **Skip cycle setup if a cycle is already active** - check with `rei cycle status` first
-- Focus areas describe the *nature* of activities, not goals - an intention spans multiple focuses
-- Only one cycle can be active at a time - reuse an existing active cycle
-- Habits can be assigned to focus areas since they have consistent nature
-- Recommend 7-10 day cycles for beginners, longer for experienced users
-- **Future intentions** are useful for planning ahead without cluttering daily views
-- Deferring a parent intention automatically defers all active children (cascade behavior)
-- To list Future intentions: `rei intention list --future`
-- To list both Active and Future: `rei intention list --all`
-- **Support relationships** connect intentions across hierarchies - use when one intention helps another without being a child
-- Supports can be declared on both Active and Future intentions
-- View supports with `rei intention show --full` or `rei support show`
-- **Categories** classify activity types (meeting, coding, reading) - distinct from context (life domain) and focus (daily nature)
-- Check existing categories with `rei category tree` before creating new ones
-- Categories can be linked to focus areas for alignment analysis
-- Assign categories to intentions with `rei intention set-category <ID> SLUG`

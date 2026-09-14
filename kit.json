@@ -3,8 +3,8 @@
   "skills": [
     {
       "name": "rei-bootstrap",
-      "description": "Interactively bootstrap intentions, habits, and reflections for Rei personal coaching",
-      "version": "1.0.0",
+      "description": "Interactively bootstrap a Rei intention hierarchy — a root intention with context, category, and optional project scope, 2–5 child intentions, support links, supporting habits, focus areas and a focus cycle, recurring reflections, and agent coaching guidance — creating everything after one confirmation and verifying it by reading back",
+      "version": "2.0.0",
       "path": "skills/rei-bootstrap",
       "files": ["SKILL.md"]
     },
