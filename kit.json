@@ -103,8 +103,8 @@
   "agents": [
     {
       "name": "rei-custom-property-guide",
-      "description": "Guide users through creating and managing custom properties in Rei. Helps design property schemas, choose value types, configure category scopes, and create state machine workflows.",
-      "version": "1.0.0",
+      "description": "Guide users through designing and managing Rei custom properties — choosing value types (including topic, tag-set, label-set, path-list), scoping to entity types and categories, inheritance, conditions, category bindings, and state machine workflows with rules, WIP limits, and lifecycle auto-complete. Use when someone wants to track new metadata on Rei entities or evolve an existing property",
+      "version": "1.1.0",
       "path": "agents",
       "files": ["rei-custom-property-guide.md"]
     }
