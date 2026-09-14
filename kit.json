@@ -87,8 +87,8 @@
     },
     {
       "name": "rei-note-from-tmp",
-      "description": "File a temporary markdown note into Rei — analyze its content, propose the anchoring intention (or topic), category, reused/new tags, and applicable note custom properties, place it in the ontology with reused/created topics, `about` associations, and edges to referenced links and notes, verify the stored content, then delete the temporary file",
-      "version": "1.0.0",
+      "description": "File a temporary markdown note into Rei — analyze its content, propose the intention (or topic) to anchor it to, a category, facet tags, and applicable note custom properties, associate it `about` reused or newly created topics, rely on Rei's automatic extraction for the URLs and wikilinks it contains, create the note verbatim, verify the stored content and every write by reading back, and only then delete the temporary file",
+      "version": "2.0.0",
       "path": "skills/rei-note-from-tmp",
       "files": ["SKILL.md"]
     },
