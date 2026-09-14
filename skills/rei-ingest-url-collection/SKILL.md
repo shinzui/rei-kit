@@ -1,267 +1,134 @@
 ---
 name: rei-ingest-url-collection
-description: Read a markdown file of links, run the full rei-ingest-url workflow for each URL (link + summary note + summarizes edge + classification + tags), and gather every resulting summary note into a single Rei collection.
+description: Read a markdown file of links, run the full rei-ingest-url workflow for each URL (link, summary note, summarizes edge, classification, facet tags, `about` associations to existing topics, read-back verification), and gather every summary note into a single manual Rei collection, reporting uncovered subjects across the batch.
 allowed-tools: AskUserQuestion, Bash, Read, WebFetch, Grep
 ---
 
 # Rei Ingest URL Collection
 
-This skill takes a markdown document containing links, applies the full `rei-ingest-url`
-workflow per URL (creating or reusing a link, summarizing, classifying, tagging), and
-gathers every summary note into a single Rei collection. Use it to turn a reading list or
-bookmark dump into a structured, classified, searchable collection in one pass.
+Turns a markdown reading list into a classified Rei collection: runs `rei-ingest-url` once per
+URL against a shared intention, and adds each resulting summary note to one manual collection.
 
-## When to Use
+Use `/rei-ingest-url` for a single URL, `/rei-summarize-links` for a lighter pass without
+classification, tags, topics, or a collection, and `/rei-bookmark-url` to grow the ontology for
+subjects this run reports as uncovered.
 
-Activate when the user says things like:
-- "Ingest every link in this markdown file as a collection"
-- "Run rei-ingest-url on all the links in <file> and group them"
-- "Create a collection from the links in <file>"
-- "/rei-ingest-url-collection <file>"
+## Relationship to rei-ingest-url
 
-Prefer `rei-ingest-url` (singular) for one-off URLs. Prefer `rei-summarize-links` if you
-want a lighter pass that skips classification and collections.
+**Read `skills/rei-ingest-url/SKILL.md` before processing links** and apply its Phases 1–9 per
+URL — don't reconstruct them from memory. This skill adds link extraction, collection
+bookkeeping, bulk-mode adjustments, and batch reporting.
 
-## Relationship to Other Skills
+## Workflow
 
-This skill orchestrates `rei-ingest-url` in bulk. **Before starting Phase 5, read
-`skills/rei-ingest-url/SKILL.md`** — the per-link procedure (its Phases 1–9) is applied
-once per URL. Don't reconstruct it from memory; if that skill evolves, this one should
-inherit the improvements.
+Use the global actor form `rei --actor claude-code …` for every write and always pass names/IDs
+explicitly (omitted arguments open fzf pickers). Many writes (links, edges, collection adds)
+can print an error and still exit `0`, so confirm by reading back.
 
-This skill adds three things on top:
-- **Link extraction** from a markdown file (Phase 2)
-- **Collection bookkeeping** — create or reuse a manual collection, add each note as a member
-- **Iteration and progress reporting** — per-link status, final summary table
+### 1. Extract links
 
-## Key Concepts
+Take the file path from the argument or the user and read it. Collect `[title](url)` pairs with
+absolute `http(s)` URLs; ignore anchors, relative paths, and image links. Dedupe by URL (keep
+the first title). Show the numbered list; stop if empty. Warn that each URL costs a fetch and a
+summary when the list is long.
 
-- **Rei collection** — a group of knowledge artifacts (notes, links, docs). Manual
-  collections have curated membership. Members are added via `rei collection add`. Only
-  manual collections accept explicit adds — virtual collections are query-driven.
-- **Per-link workflow** — see `rei-ingest-url/SKILL.md`. Each URL produces a link, a summary
-  note, a `summarizes` edge, and (where confident) values for `author-type`, `content-type`,
-  `media`, `platform`, plus a tag set.
-- **Shared intention** — one intention ID anchors every link and note created by a run.
-  The user picks it once at the start.
+### 2. Shared intention
 
-## Workflow Overview
-
-1. **Get the markdown file** — from args or the user
-2. **Extract links** — parse `[title](url)` pairs, dedupe by URL
-3. **Get the intention ID** — once, applied to every link and note
-4. **Get or create the collection** — name + optional description
-5. **Ensure the `summarizes` predicate exists** — once up-front, not per link
-6. **Process each link** — apply the `rei-ingest-url` workflow, add the summary note to the collection
-7. **Summary** — results table and failure list
-
-## Instructions for Claude
-
-### Phase 1: Get the Markdown File
-
-The path may be supplied as an argument. If not, ask:
-
-```
-Question: "Which markdown file contains the links to ingest?"
-Header: "File"
-Options:
-- Let me paste the file path
-```
-
-Read the file with the Read tool. If it does not exist, stop and tell the user.
-
-### Phase 2: Extract Links
-
-From the file content, extract all markdown links matching `[title](url)`. Ignore:
-- Anchor-only links (`[text](#heading)`)
-- Relative file links (`[text](./file.md)`, `[text](../x)`)
-- Image links (`![alt](url)`)
-
-**Dedupe by URL** — if the same URL appears multiple times, process it only once. Keep the
-first title encountered for display purposes.
-
-Display the discovered links:
-
-```
-Found N unique links in PATH:
-1. [title1](url1)
-2. [title2](url2)
-...
-```
-
-If no links are found, stop and tell the user.
-
-### Phase 3: Get the Intention ID
-
-One intention anchors every link and note this run creates.
-
-```
-Question: "Which intention should these links and summary notes be attached to? (e.g., intention_01h455vb4pex)"
-Header: "Intention"
-Options:
-- Let me type the intention ID
-- Let me browse intentions first
-```
-
-If the user wants to browse, run:
+One intention anchors every new link and note. Take an ID from the user, or search:
 
 ```bash
-rei intention list
+rei intention list --all -s "KEYWORD" --json | jq -r '.[] | "\(.id)\t\(.title)"'
 ```
 
-Then ask again for the ID.
+### 3. Collection (before iterating, so partial progress survives)
 
-### Phase 4: Get or Create the Collection
-
-Create the collection **now**, not at the end. That way partial progress is preserved if
-the run is interrupted.
-
-```
-Question: "Add the summary notes to an existing collection or create a new one?"
-Header: "Collection"
-Options:
-- Create a new collection (Recommended)
-- Add to an existing collection
-```
-
-**If new**: ask for a name and optional description.
-
-```
-Question: "What should the collection be named?"
-Header: "Name"
-Options:
-- Let me type the name
-```
-
-```
-Question: "Optional description for the collection?"
-Header: "Description"
-Options:
-- Skip (no description) (Recommended)
-- Let me type a description
-```
-
-Then create it:
+New (default) — ask for a name and optional description:
 
 ```bash
-rei collection create "NAME"                    # no description
-rei collection create "NAME" -d "DESCRIPTION"   # with description
+rei --actor claude-code collection create "NAME" [-d "DESCRIPTION"]
 ```
 
-**If existing**: list collections and confirm the one the user picks is **manual** (not
-virtual — `rei collection show` indicates the type). If it is virtual, stop and explain:
-virtual collections cannot have members added directly.
+Existing — it must be a manual collection (virtual collections are query-driven and reject
+adds):
 
 ```bash
-rei collection list
-rei collection show "NAME"
+rei collection list --json \
+  | jq -r '.collections[].collection | "\(.collectionId)\t\(.kind.type)\t\(.name)"'
 ```
 
-Store `COLLECTION_NAME` for use in Phase 6.
+Either way, resolve and keep `COLLECTION_ID`, and confirm `kind.type == "manual_collection"`.
 
-### Phase 5: Ensure the `summarizes` Predicate Exists
+### 4. Preflight the `summarizes` predicate (once)
 
-Check once, up-front — don't let the first per-link edge creation discover this:
+`predicate show` exits `0` even when the key is missing, so check the list:
 
 ```bash
-rei predicate show summarizes >/dev/null 2>&1 || \
-  rei predicate define summarizes --label "Summarizes" --source-types note --target-types link,note
+rei predicate list --json | jq -e '.[] | select(.predicateKey == "summarizes")' >/dev/null || \
+  rei --actor claude-code predicate define summarizes --label "Summarizes" \
+    --source-types note --target-types link,note,topic
 ```
 
-### Phase 6: Process Each Link
+Never redefine or loosen an existing predicate.
 
-**Read `skills/rei-ingest-url/SKILL.md` now** if you haven't already. The per-link
-procedure below is a thin wrapper around its Phases 1–9.
+### 5. Process each link (sequentially)
 
-For each `(title, url)` pair, in order:
+**5a. Run `rei-ingest-url`** with these bulk-mode adjustments:
 
-**6a. Apply the `rei-ingest-url` workflow** to this URL, with these adjustments to avoid
-redundant prompts:
-
-| `rei-ingest-url` phase | In bulk mode |
+| rei-ingest-url | Bulk mode |
 |---|---|
-| Phase 1 (ask for URL) | **Skip** — already known |
-| Phase 2 (check for existing link) | Keep — reuse any existing link at this URL |
-| Phase 3 (ask for intention) | **Skip** — use the shared `INTENTION_ID` from Phase 3 above |
-| Phase 4 (create link) | Keep |
-| Phase 5 (fetch + summarize) | Keep |
-| Phase 6 (create summary note) | Keep — attach to `INTENTION_ID` |
-| Phase 7 (create edge) | Keep |
-| Phase 8 (classify link) | Keep |
-| Phase 9 (tag link) | Keep, but **auto-apply proposed tags** — do not call the per-link AskUserQuestion confirmation (step 9c). Still harvest existing tags (9a) and propose thoughtfully (9b); just skip the interactive confirm and apply directly in 9d. |
+| Phase 1 (URL) | Skip — known |
+| Phase 2 (existing link) | Keep. If the link already has a `summarizes` note, don't create another; reuse that note for the collection |
+| Phase 3 (intention) | Skip — shared intention (a reused link keeps its own attachments) |
+| Phases 4–8 | Keep |
+| 9a (harvest tags + topics) | Harvest once before the loop; add tags created during the run to the in-memory vocabulary so later links reuse them |
+| 9b (propose) | Keep |
+| 9c (confirm) | Skip — apply proposals directly |
+| 9d (apply) | Keep |
+| 9e (verify) | Keep — record any write still missing after one retry |
 
-Capture `LINK_ID`, `NOTE_ID`, and the reused-vs-new flag from the per-link output.
+Capture `LINK_ID`, `NOTE_ID`, reused/new, tags, `about` topics, uncovered subjects, and verify
+failures.
 
-**6b. If the per-link workflow fails** (unreachable URL, fetch error, etc.), log the
-failure with the URL and error message and **continue** to the next link. Do not abort the
-batch. A failed link that had already created a bare `link` entity (Phase 4 succeeded but
-Phase 5 failed) stays in place — report it in the failure list so the user can retry
-manually.
+**5b. Failures are per link.** Log the URL and error and continue. A link created before a
+failed fetch stays in place — list it for retry.
 
-**6c. Add the summary note to the collection:**
+**5c. Add the summary note** (notes only; links are reachable via `summarizes`):
 
 ```bash
-rei collection add "COLLECTION_NAME" --note NOTE_ID
+rei --actor claude-code collection add COLLECTION_ID --note NOTE_ID
 ```
 
-(Only the note. Links are reachable from each note via the `summarizes` edge, so adding
-them to the collection too would duplicate signal.)
+Verify membership — skip the add if the note is already a member (reused note):
 
-**6d. Log progress:**
-
-```
-[N/TOTAL] Ingested: "TITLE"
-  URL:  <url>
-  Link: <link_id> (reused / new)
-  Note: <note_id>
-  Tags: tag-one, tag-two, tag-three  (R reused, M new)
-  Added to collection: COLLECTION_NAME
+```bash
+rei collection show COLLECTION_ID --json \
+  | jq -e --arg n NOTE_ID '.members[] | select(.memberRef.data == $n)' >/dev/null
 ```
 
-### Phase 7: Summary
+Add links as members too (`--link LINK_ID`) only if the user asks.
 
-Display a final summary:
+**5d. Progress line:** `[N/TOTAL] TITLE — link <id> (reused/new), note <id>, tags …, about …`.
+
+### 6. Summary
 
 ```
 ## URL Collection Ingested
 
 - **Source document**: PATH
 - **Intention**: INTENTION_ID
-- **Collection**: COLLECTION_NAME
-- **Links processed**: M / TOTAL
-- **Failed**: F
+- **Collection**: NAME (COLLECTION_ID)
+- **Ingested**: M / TOTAL   **Failed**: F
 
-| # | Title | Link | Note | Reused? | Tags |
-|---|-------|------|------|---------|------|
-| 1 | ... | link_id | note_id | yes/no | a, b, c |
-| ... |
+| # | Title | Link (new/reused) | Note | Tags | About |
+|---|-------|-------------------|------|------|-------|
 
-### Failed
-- [url]: <error>
-  (If the link was created before the fetch failed, its ID is <link_id> — retry with `/rei-ingest-url <url>`.)
+### Uncovered subjects (no existing topic)
+- <subject> — seen in N links   → file with `/rei-bookmark-url`
+
+### Failed / Unverified
+- <url>: <error or missing write>  (link <link_id> exists — retry with `/rei-ingest-url <url>`)
 
 ### Next Steps
-- Review the collection: `rei collection show COLLECTION_NAME`
-- Export as EPUB: `/rei-collection-epub COLLECTION_NAME`
-- Retry any failed links individually with `/rei-ingest-url <url>`
+- `rei collection show COLLECTION_ID`
+- `/rei-collection-epub` to export
 ```
-
-## Important Notes
-
-- Always use `--actor claude-code` when creating links and notes.
-  `rei collection create` and `rei collection add` do **not** accept `--actor` — don't
-  pass it.
-- **Create the collection before iterating.** Partial progress survives interruption, and
-  each note is added as it is created rather than gathered into an in-memory list.
-- **Dedupe by URL, not title.** The same URL with different link text should still be
-  processed only once.
-- **Fetch failures are per-link, not fatal.** Log and continue; surface failures in the
-  final summary so the user can retry individually.
-- **Suppress only the per-link prompts that would be redundant** — URL, intention, and tag
-  confirmation. Keep the rest of the `rei-ingest-url` behavior intact (existing-link
-  reuse, enum validation, tag harvesting, `--actor` on entity creation).
-- **Only notes become collection members** in this skill. If the user asks for links to be
-  collection members too, add `rei collection add "COLLECTION_NAME" --link LINK_ID` after
-  step 6c.
-- The per-link workflow may take a while (one WebFetch + one Claude summarization per URL).
-  Warn the user up-front if there are many links.

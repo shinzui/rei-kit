@@ -45,8 +45,8 @@
     },
     {
       "name": "rei-ingest-url-collection",
-      "description": "Read a markdown file of links, run the full rei-ingest-url workflow for each URL, and gather every resulting summary note into a single Rei collection",
-      "version": "1.0.0",
+      "description": "Read a markdown file of links, run the full rei-ingest-url workflow for each URL (link, summary note, summarizes edge, classification, facet tags, `about` associations to existing topics, read-back verification), and gather every summary note into a single manual Rei collection, reporting uncovered subjects across the batch",
+      "version": "1.1.0",
       "path": "skills/rei-ingest-url-collection",
       "files": ["SKILL.md"]
     },
