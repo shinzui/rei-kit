@@ -91,6 +91,13 @@
       "version": "1.0.0",
       "path": "skills/rei-note-from-tmp",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-attach-link-to-intention",
+      "description": "Attach a URL to an intention and record why it was attached — reuse or create the canonical link, connect link → intention with a purpose predicate (inspiration-for, reference-for, comparable-for, …) whose edge description holds the specific reason (\"their pricing table\"), wire the aspects that made it relevant to topics (`exemplifies` or `about`), classify the link, add a why-note that `references` the link when the reason is too long for one line, and show how to recall it later. Use when the user attaches a link to work in progress with a reason; use rei-ingest-url to summarize a page and rei-bookmark-url to file it under a topic.",
+      "version": "1.0.0",
+      "path": "skills/rei-attach-link-to-intention",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
