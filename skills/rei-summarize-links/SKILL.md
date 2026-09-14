@@ -1,147 +1,151 @@
 ---
 name: rei-summarize-links
-description: Extract markdown links from a document, summarize each URL, create Rei notes with summaries, create links, and connect them with "summarizes" edges.
+description: Lightweight bulk pass over a markdown document's links — summarize each URL with the `summarize` CLI, store the summary as a note on one intention, reuse or create the link, and connect them with a `summarizes` edge. No classification, tags, topics, or collection
 allowed-tools: AskUserQuestion, Bash, Read, Grep
 ---
 
 # Rei Summarize Links
 
-This skill takes a markdown document containing markdown links, summarizes each linked URL using the `summarize` CLI, and creates Rei notes, links, and edges for each.
+Takes a markdown document, and for every external link in it: summarizes the URL with the
+`summarize` CLI, stores the summary as a note anchored to one intention, reuses or creates the
+Rei link, and connects them with `note -[summarizes]-> link`.
+
+This is the **light** pass. Use a sibling instead when the user wants more:
+
+- `rei-ingest-url` — one URL, plus link classification (`author-type`, `content-type`, `media`,
+  `platform`) and tags.
+- `rei-ingest-url-collection` — the full `rei-ingest-url` workflow for every link in a file,
+  gathered into a collection.
+- `rei-bookmark-url` — file a link under topics in the ontology rather than summarizing it.
 
 ## When to Use
 
-Activate when the user says things like:
-- "Summarize links from this document"
-- "Process links in my markdown file"
-- "Create summaries for all links in ..."
-- "Summarize the links in ..."
+- "Summarize the links in this document"
+- "Create summary notes for every link in <file>"
+- "/rei-summarize-links <file>"
 
-## Workflow Overview
+## Workflow
 
-1. **Read the markdown file** — extract all `[title](url)` links
-2. **Ask for intention** — get the intentionId to anchor notes and links
-3. **For each link** — summarize, create note, create link, create edge
+### 1. Extract links
 
-## Instructions for Claude
+Read the file and collect `[title](url)` pairs with `http(s)` URLs. Skip image links
+(`![alt](url)`), anchors (`#heading`), and relative paths. Deduplicate by URL (keep the first
+title). If none remain, say so and stop. Show the numbered list.
 
-### Phase 1: Read and Parse the Markdown File
+### 2. Choose the intention (and optional category)
 
-The user provides a path to a markdown file (as an argument or in conversation).
-
-Read the file, then extract all markdown links matching the pattern `[title](url)`. Ignore:
-- Anchor-only links (`[text](#heading)`)
-- Relative file links (`[text](./file.md)`)
-- Image links (`![alt](url)`)
-
-Collect a list of `(title, url)` pairs.
-
-If no links are found, inform the user and stop.
-
-Display the discovered links to the user:
-
-```
-Found N links:
-1. [title1](url1)
-2. [title2](url2)
-...
-```
-
-### Phase 2: Get Intention ID
-
-Use AskUserQuestion to get the intentionId:
-
-```
-Question: "Which intention should these summary notes and links be attached to? Provide the intention ID (e.g., intention_01h455vb4pex)."
-Header: "Intention"
-Options:
-- Let me type the intention ID
-- Let me browse intentions first
-```
-
-If the user wants to browse first, run:
-```bash
-rei intention list
-```
-Then ask again for the ID.
-
-### Phase 3: Process Each Link
-
-For each `(title, url)` pair, perform these steps sequentially:
-
-#### Step 3a: Summarize the URL
-
-Generate a slug from the title (lowercase, replace spaces/special chars with hyphens, truncate to 60 chars). Run:
+Take an intention ID from the arguments or the user; if they only give a name, resolve it:
 
 ```bash
-summarize --cli claude --length xxl "URL" > "/tmp/rei-summary-SLUG.md"
+rei intention list -s "KEYWORD" --json
 ```
 
-If the summarize command fails for a link, log the error and continue to the next link.
+Confirm the intention and the link list in one question before writing anything. Optionally
+accept a note category; if one is given, read its guidance first
+(`rei category print-note-guidance SLUG`) — it may dictate note structure, and the category's
+property bindings are applied automatically when the note is created.
 
-#### Step 3b: Create the Rei Note
+### 3. Preflight
 
-Read the generated summary file. Prepend an H1 title line and a blank line, then pipe the full content to `rei note new`:
+The `summarizes` predicate is workspace-defined (not created by `rei ontology seed-system`):
 
 ```bash
-(echo '# Summary of "TITLE"'; echo ''; cat /tmp/rei-summary-SLUG.md) | rei note new -i INTENTION_ID --stdin --actor claude-code
+rei predicate show summarizes --json
 ```
 
-Capture the note ID from the output.
-
-#### Step 3c: Create the Rei Link
+If it is missing, define it:
 
 ```bash
-rei link add "URL" -i INTENTION_ID -t "TITLE" --actor claude-code
+rei --actor claude-code predicate define summarizes --label "Summarizes" \
+  --description "Source (note or link) is a summary of the target note, link, or topic" \
+  --source-types link,note --target-types link,note,topic
 ```
 
-Capture the link ID from the output.
+If it exists but doesn't allow `note → link`, stop and report it — don't change the predicate.
 
-#### Step 3d: Create the Edge
+Create a working directory with `mktemp -d` for summaries. Warn that `summarize` can take a
+while per URL when there are many links.
+
+### 4. Process each link (sequentially)
+
+**a. Find an existing link.** Rei deduplicates links by canonical URL, so match on both forms:
 
 ```bash
-rei edge add --from NOTE_ID --to LINK_ID --predicate summarizes
+rei link list --all --domain DOMAIN --json \
+  | jq -r --arg u "URL" '.[] | select(.original_url == $u or .canonical_url == $u) | .id'
 ```
 
-#### Step 3e: Log Progress
+If a link exists, check whether it is already summarized:
 
-After each link is processed, print a status line:
-
-```
-[N/TOTAL] Done: "TITLE"
-  Note: NOTE_ID
-  Link: LINK_ID
-  Edge: EDGE_ID
+```bash
+rei edge show LINK_ID -p summarizes --json \
+  | jq -r --arg l LINK_ID '.[] | select(.targetId == $l and .sourceType == "note") | .sourceId'
 ```
 
-### Phase 4: Summary
+If a summary note already exists, skip this URL (report it) unless the user asked to
+re-summarize.
 
-After all links are processed, display a final summary:
+**b. Summarize.**
+
+```bash
+summarize --cli claude --length xxl "URL" > "$WORKDIR/SLUG.md"
+```
+
+Use the CLI provider matching the session (`--cli codex` under Codex). If it fails or produces
+an empty file, record the failure and move to the next link — create nothing for it.
+
+**c. Create the note.**
+
+```bash
+(echo "# Summary of \"TITLE\""; echo; echo "Source: URL"; echo; cat "$WORKDIR/SLUG.md") \
+  | rei --actor claude-code note new -i INTENTION_ID [-c CATEGORY_SLUG] --stdin
+```
+
+Capture `NOTE_ID` (`grep -o 'note_[0-9a-z]*' | head -1`).
+
+**d. Reuse or create the link.** Always pass `-i` — without it `link add` opens an fzf picker.
+Adding a URL that already exists reuses that link and adds an attachment to the intention:
+
+```bash
+rei --actor claude-code link add "URL" -i INTENTION_ID -t "TITLE"
+```
+
+Capture `LINK_ID` (`grep -o 'link_[0-9a-z]*' | head -1`), or keep the one found in step a.
+
+**e. Connect them.**
+
+```bash
+rei --actor claude-code edge add --from NOTE_ID --to LINK_ID --predicate summarizes
+```
+
+**f. Verify.** Many rei commands print an error yet exit `0`, so read back instead of trusting
+the exit status:
+
+```bash
+rei note show NOTE_ID --json
+rei edge show NOTE_ID -p summarizes --json \
+  | jq -r --arg l LINK_ID '.[] | select(.targetId == $l and .status == "active") | .edgeId'
+```
+
+A missing note or edge counts as a failure for that link. Print a one-line progress status
+(`[N/TOTAL] TITLE — note / link / edge IDs`).
+
+### 5. Finish
+
+Remove the working directory. Report:
 
 ```
 ## Summarize Links Complete
 
 - **Source document**: PATH
-- **Intention**: INTENTION_ID
-- **Links processed**: N / TOTAL
-- **Failed**: M (if any)
+- **Intention**: INTENTION_ID — title
+- **Summarized**: N / TOTAL   **Skipped (already summarized)**: K   **Failed**: M
 
-| # | Title | Note | Link | Edge |
-|---|-------|------|------|------|
-| 1 | title | note_id | link_id | edge_id |
-| ... | ... | ... | ... | ... |
+| # | Title | Note | Link (new/reused) | Edge |
+|---|-------|------|-------------------|------|
+
+### Failed / Skipped
+- TITLE (URL) — reason
 ```
 
-If any links failed, list them separately with the error.
-
-## Important Notes
-
-- Always use `--actor claude-code` when creating notes and links
-- The `summarize` command can take a while per URL — inform the user that this may take time if there are many links
-- If the `summarizes` predicate doesn't exist yet, create it first:
-  ```bash
-  rei predicate define summarizes --label "Summarizes" --source-types note --target-types link,note
-  ```
-  Check with `rei predicate show summarizes` before attempting to define it — skip if it already exists.
-- Clean up temp files in `/tmp/rei-summary-*.md` after all links are processed
-- If a link URL appears multiple times in the document, process it only once (deduplicate by URL)
-- Capture entity IDs from command output — rei commands print the created entity's ID to stdout
+Suggest `rei-ingest-url-collection` if the user now wants these classified and grouped.
