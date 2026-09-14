@@ -66,8 +66,8 @@
     },
     {
       "name": "rei-note-from-url-markdown",
-      "description": "Capture a page's markdown snapshot into Rei as a single note — reuse or create a link for the source URL from the file's frontmatter, store the full markdown verbatim as one note anchored to an intention, connect them with a `captured-from` edge, and tag the note with reused/new topical tags. No archive/summary split, no link classification",
-      "version": "1.0.0",
+      "description": "Capture a page's markdown snapshot into Rei as a single note — read a pre-converted markdown file (with frontmatter), reuse or create a link for the source URL, store the file verbatim as one note anchored to an intention, connect them with a `captured-from` edge, tag the note with reused/new facet tags, associate it `about` the existing topics it covers, and verify the stored content. No archive/summary split, no link classification",
+      "version": "2.0.0",
       "path": "skills/rei-note-from-url-markdown",
       "files": ["SKILL.md"]
     },
