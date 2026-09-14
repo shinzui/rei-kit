@@ -147,12 +147,14 @@ rei --actor claude-code edge add --from SUMMARY_NOTE_ID --to LINK_ID --predicate
 rei --actor claude-code edge add --from SUMMARY_NOTE_ID --to ARCHIVE_NOTE_ID --predicate summarizes
 ```
 
-Only if `rei predicate show KEY` reports a predicate missing, define it (never widen an existing
-one):
+Before the edges, define any missing predicate (never widen an existing one). `rei predicate
+show` exits `0` even for a missing key, so check the list instead:
 
 ```bash
-rei --actor claude-code predicate define archives --label "Archives" --source-types note --target-types link
-rei --actor claude-code predicate define summarizes --label "Summarizes" --source-types note --target-types link,note,topic
+rei predicate list --json | jq -e '.[] | select(.predicateKey == "archives")' >/dev/null || \
+  rei --actor claude-code predicate define archives --label "Archives" --source-types note --target-types link
+rei predicate list --json | jq -e '.[] | select(.predicateKey == "summarizes")' >/dev/null || \
+  rei --actor claude-code predicate define summarizes --label "Summarizes" --source-types note --target-types link,note,topic
 ```
 
 ### Phase 7: Classify and Tag
