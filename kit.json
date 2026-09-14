@@ -10,8 +10,8 @@
     },
     {
       "name": "rei-bootstrap-habit",
-      "description": "Interactively bootstrap a new habit for Rei personal coaching",
-      "version": "1.0.0",
+      "description": "Interactively create a new Rei habit — pin down polarity (build or break), name, purpose, and cadence (fixed, flexible, or cue-based), link it to a supporting intention, optionally classify it with a category (which carries its focus area), set an action template, context, custom properties, and a first reminder, then verify it by reading it back. Use when the user wants to start a practice or stop a behavior",
+      "version": "1.1.0",
       "path": "skills/rei-bootstrap-habit",
       "files": ["SKILL.md"]
     },

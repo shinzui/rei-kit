@@ -1,583 +1,157 @@
 ---
 name: rei-bootstrap-habit
-description: Interactively bootstrap a new habit for Rei personal coaching. Use when the user wants to create a new daily or weekly practice. Guides through defining the habit name, purpose, schedule, linking to an intention, and optionally assigning a focus area.
+description: Interactively create a new Rei habit — pin down polarity (build or break), name, purpose, and cadence (fixed, flexible, or cue-based), link it to a supporting intention, optionally classify it with a category (which carries its focus area), set an action template, context, custom properties, and a first reminder, then verify it by reading it back. Use when the user wants to start a practice or stop a behavior.
 allowed-tools: AskUserQuestion, Bash, Read
 ---
 
 # Rei Bootstrap Habit
 
-This skill helps users create a well-structured habit through guided questioning, ensuring all relevant details are captured.
+Turns "I want to start/stop doing X" into a well-formed Rei habit. `rei-bootstrap` delegates
+habit creation to this skill, so keep the phases self-contained.
 
 ## When to Use
 
-Activate when the user says things like:
-- "Help me create a new habit"
-- "I want to start a new daily practice"
-- "Bootstrap a habit"
-- "Add a habit for..."
-- "Create a weekly habit"
-- "I want to stop doing X" (break habit)
-- "Help me avoid X" (break habit)
+- "Help me create a new habit" / "Add a habit for…"
+- "I want to start a daily/weekly practice"
+- "I want to stop doing X" / "Help me avoid X" (break habit)
+- "/rei-bootstrap-habit"
 
 ## Key Concepts
 
-### Polarity: Build vs Break
+- **Polarity** — *build* (cultivate; record actions) or *break* (avoid; `--break`, then
+  `start-abstinence`, and `log-occurrence` on relapse, which resets the streak).
+- **Cadence** — exactly one of:
+  - fixed: `--daily`, `--weekly DAY`, `--weekly-on mon,wed,fri`, `--monthly D` (1–31),
+    `--quarterly`, `--yearly-month M --yearly-day D`, `--every N`
+  - flexible: `--free-weekly N`, `--free-monthly N`, `--free-quarterly N`, `--free-yearly N`
+  - cue-based: `--cue "After meals"` with optional `--target "3/week"`
+- **Linked intention** — the goal the habit serves. Recorded habit actions count toward it,
+  and the habit inherits its context. Context (`set-context`) is only allowed on unlinked habits.
+- **Category** — habits have one (`rei habit set-category`). It drives classification, scoped
+  custom properties, and category property bindings (auto-set values). A category may map to a
+  **focus area** (`focusId`); that is how a habit aligns with a focus — there is no separate
+  habit→focus command.
+- **Blockers** — `rei blocker declare --habit ID` pauses the habit automatically; resolving
+  the last one resumes it. Mention this if the user anticipates obstacles; don't create one
+  during setup.
 
-Habits have two polarities:
-- **Build habits**: Cultivate positive behaviors (e.g., "Morning meditation", "Daily reading")
-- **Break habits**: Avoid unwanted behaviors (e.g., "No social media before noon", "Quit snacking")
+## Workflow
 
-### Cadence: When to Track
+Use `rei --actor claude-code …` for every write and always pass IDs explicitly — several habit
+subcommands open an fzf picker when the ID is omitted. Ask only for what the user hasn't
+already said; if the request is complete, go straight to the plan.
 
-There are two main cadence types:
+### 1. Understand the practice
 
-**Recurring (time-triggered)**:
-- Fixed schedules: Daily, Weekly, Monthly, Quarterly, Yearly, Every N days
-- Free schedules: N times per week/month/quarter/year (flexibility in when)
+Establish what the user wants to do or avoid, why, and when. Derive:
+- **Polarity** — ask only if ambiguous.
+- **Name** — short and action-oriented ("Morning meditation"; for break: "No social media
+  before noon").
+- **Purpose** — the user's own reason, in their words.
+- **Cadence** — map their description to one cadence flag. For weekly, prefer `--weekly-on`
+  when more than one day. For cue-based, ask whether they want a target frequency.
+- **Action template** (build habits, optional) — a default description for recorded actions
+  when the action is the same each time.
 
-**Cue-based (event-triggered)**:
-- Triggered by events/situations, not calendar
-- Examples: "After meals", "When feeling stressed", "When encountering good writing"
-- Optional target frequency (e.g., "3 times per week")
+### 2. Gather Rei context
 
-## Workflow Overview
+Run in parallel:
 
-1. **Understand the Practice** - What habit and why
-2. **Determine Polarity** - Build or Break
-3. **Define Name and Purpose** - Clarify concise name and motivation
-4. **Set the Cadence** - Recurring schedule or cue-based
-5. **Link to Intention** - Optionally connect to a supporting intention
-6. **Assign Focus Area** - If focus areas exist, align the habit
-7. **Set Action Template** - Optional default description for actions
-8. **Set Context** - If unlinked, optionally categorize the habit
-
-## Instructions for Claude
-
-### Phase 1: Discovery
-
-Use AskUserQuestion to understand what practice the user wants to establish:
-
-```
-Question: "What habit or practice would you like to build?"
-Header: "Practice"
-Options:
-- A morning routine (journaling, exercise, meditation)
-- An evening routine (reflection, planning, wind-down)
-- A learning practice (reading, studying, skill-building)
-- Something I want to stop or avoid (break habit)
-```
-
-Follow up to get specifics about their habit.
-
-### Phase 2: Polarity
-
-Based on discovery, clarify polarity if needed:
-
-```
-Question: "Is this a behavior you want to cultivate or avoid?"
-Header: "Type"
-Options:
-- Build: I want to do this regularly (Recommended)
-- Break: I want to stop or avoid this behavior
-```
-
-**Note**: For Break habits, the workflow differs:
-- Instead of "completed", we track abstinence
-- Recording "occurred" means a relapse happened
-- Use `rei habit start-abstinence` after creation to begin tracking
-
-### Phase 3: Name and Purpose
-
-Ask about the habit details:
-
-```
-Question: "What should this habit be called? (Keep it short and action-oriented)"
-Header: "Name"
-Options:
-- Let me type the name
-```
-
-For **Build habits**, suggest active names: "Morning meditation", "Daily reading"
-For **Break habits**, suggest avoidance names: "No social media before noon", "Skip late-night snacking"
-
-Then ask about purpose:
-
-```
-Question: "What's the purpose of this habit? (Why does it matter to you?)"
-Header: "Purpose"
-Options:
-- Let me describe the purpose
-```
-
-### Phase 4: Cadence
-
-First, determine the cadence type:
-
-```
-Question: "How should this habit be triggered?"
-Header: "Cadence"
-Options:
-- Time-based: On a regular schedule (daily, weekly, etc.) (Recommended)
-- Cue-based: Triggered by events or situations
-```
-
-#### Time-based Schedules
-
-If time-based, ask about frequency:
-
-```
-Question: "How often should you do this habit?"
-Header: "Schedule"
-Options:
-- Daily (every day)
-- Weekly (one or more specific days)
-- Monthly (same day each month)
-- Flexible (N times per week/month, any days)
-```
-
-**Daily**: Use `--daily`
-
-**Weekly schedules**:
-- Single day: Ask which day, use `--weekly DAY`
-- Multiple days: Ask which days, use `--weekly-on DAY1,DAY2,...`
-
-```
-Question: "Which day(s) of the week?"
-Header: "Days"
-Options:
-- Every Monday
-- Mon, Wed, Fri (common pattern)
-- Weekdays only (mon,tue,wed,thu,fri)
-- Let me specify the days
-```
-
-**Monthly**:
-```
-Question: "Which day of the month? (1-31)"
-Header: "Day"
-Options:
-- 1st of the month
-- 15th (mid-month)
-- Last weekday (use 28 for safety)
-- Let me specify
-```
-Use `--monthly DAY`
-
-**Quarterly**: Use `--quarterly`
-
-**Yearly**:
-```
-Question: "Which date of the year?"
-Header: "Date"
-Options:
-- Let me specify (month and day)
-```
-Use `--yearly-month MONTH --yearly-day DAY`
-
-**Every N days** (fixed interval):
-```
-Question: "How many days between each occurrence?"
-Header: "Interval"
-Options:
-- Every 2 days
-- Every 3 days
-- Let me specify
-```
-Use `--every N`
-
-**Flexible schedules** (freedom in when):
-
-```
-Question: "How many times per period do you want to aim for?"
-Header: "Target"
-Options:
-- N times per week (use --free-weekly N)
-- N times per month (use --free-monthly N)
-- N times per quarter (use --free-quarterly N)
-- N times per year (use --free-yearly N)
-```
-
-#### Cue-based Habits
-
-If cue-based:
-
-```
-Question: "What triggers this habit? (Describe the cue or situation)"
-Header: "Cue"
-Options:
-- Let me describe the trigger
-```
-
-Examples: "After meals", "When feeling anxious", "When I see interesting code"
-
-Optionally ask about target frequency:
-
-```
-Question: "Do you want to set a target frequency for this cue-based habit?"
-Header: "Target"
-Options:
-- Yes, set a target (e.g., 3 times per week)
-- No target, just track when it happens
-```
-
-If yes:
-```
-Question: "What's your target? (format: N/period, e.g., 3/week, 10/month)"
-Header: "Frequency"
-Options:
-- 3/week
-- 5/week
-- 10/month
-- Let me specify
-```
-
-Use `--cue "DESCRIPTION" --target "N/period"`
-
-### Phase 5: Link to Intention (Recommended)
-
-**First, check for existing intentions:**
 ```bash
-rei intention list
-```
-
-Ask about linking:
-
-```
-Question: "Would you like to link this habit to an intention it supports?"
-Header: "Link"
-Options:
-- Yes, let me pick from my intentions
-- No, this is a standalone habit
-```
-
-If linking, use FZF or ask which intention:
-```bash
-rei habit link-intention <HABIT_ID> <INTENTION_ID>
-```
-
-**Note**: Linking habits to intentions enables:
-- Automatic context inheritance
-- Tracking which habits support which goals
-- Recording actions that count toward the intention
-
-### Phase 6: Focus Area (If Available)
-
-**First, check for existing focus areas:**
-```bash
+rei intention list --json
+rei category list --flat --descriptions --json   # slug, focusId, propertyBindings
 rei focus list
-```
-
-**If focus areas exist**, ask about alignment:
-
-```
-Question: "Which focus area does this habit align with?"
-Header: "Focus"
-Options:
-- [List existing focus areas, e.g., "Connect", "Read", "Study", "Play", "Create"]
-- Skip (no focus alignment)
-```
-
-**Note**: Habits have a consistent nature, so focus assignment makes sense:
-- "Morning reading" -> Read
-- "Code practice" -> Study
-- "Music practice" -> Play or Create
-- "Journal writing" -> Create
-
-**Skip this phase if no focus areas exist.**
-
-### Phase 6.5: Category for Actions (Optional)
-
-When you record actions for this habit, you can pre-assign a category so actions are automatically classified.
-
-**First, check for existing categories:**
-```bash
-rei category list
-```
-
-**If categories exist**, ask about action categorization:
-```
-Question: "When you record actions for this habit, what category should they have?"
-Header: "Category"
-Options:
-- [List relevant categories, e.g., "learning/coding", "meeting/1-on-1"]
-- Create a new category
-- No default category (I'll classify each action)
-```
-
-**Note**: This doesn't assign a category to the habit itself (habits don't have categories), but establishes the default category for actions recorded via `rei habit record-action`.
-
-If creating a new category:
-```bash
-rei category create "CATEGORY_NAME" --actor claude-code
-```
-
-Store the category slug to mention in the output format for use with `--category` when recording actions.
-
-**Skip this phase if no categories exist.**
-
-### Phase 7: Action Template (Optional)
-
-Ask if they want a default description:
-
-```
-Question: "Would you like to set a default action description?"
-Header: "Template"
-Options:
-- Yes, let me define a template
-- No, I'll describe each action individually
-```
-
-If yes, ask for the template:
-```
-Question: "What should the default action description be?"
-Header: "Template"
-Options:
-- Let me type the template
-```
-
-The action template is used when recording actions with `rei habit record-action`.
-
-### Phase 8: Context (Unlinked Habits Only)
-
-**Only if the habit is NOT linked to an intention**, offer to set context:
-
-```bash
+rei custom-property list -e habit --json
 rei intention contexts
+rei habit list --json | jq -r '.[] | "\(.habitId)\t\(.status)\t\(.name)"'
 ```
 
+- **Duplicate check** — if an active or paused habit already covers this practice, offer to
+  resume/rename/reschedule it instead (`rei habit resume`, `rename`, `update-schedule`).
+- **Intention** — propose the best-matching intention (search with
+  `rei intention list --all -s KEYWORD --json`); standalone is fine if nothing fits.
+- **Category** — propose one only if it clearly fits. Prefer a category whose `focusId`
+  matches the focus area the habit belongs to. If the right category doesn't exist, offer to
+  create it (optionally mapped to a focus with `-f FOCUS_ID`). Note its `propertyBindings` —
+  those values will be set automatically; don't set them again.
+- **Properties** — only habit properties in scope for the chosen category whose value is
+  obvious; values must come from the definition (`rei custom-property show KEY --json`).
+- **Context** — only when unlinked, and reuse an existing context.
+- **Reminder** (optional) — useful for flexible or low-frequency habits (e.g. a nudge before a
+  monthly one).
+
+### 3. Confirm the plan
+
+Show the full plan and get one approval (apply / adjust / cancel):
+
 ```
-Question: "Would you like to categorize this habit with a context?"
-Header: "Context"
-Options:
-- [List existing contexts, e.g., "work", "personal"]
-- Create a new context
-- Skip (no context)
-```
-
-If setting context:
-```bash
-rei habit set-context <HABIT_ID> "CONTEXT"
-```
-
-**Skip this phase if:**
-- The habit is linked to an intention (context is inherited)
-- No contexts are in use
-
-## Creating the Habit
-
-Use the appropriate command based on gathered information:
-
-### Build Habits (default)
-
-**Daily with intention:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --daily \
-  --intention <INTENTION_ID> \
-  --actor claude-code
+Habit plan
+  Name:       Morning meditation            Polarity: build
+  Purpose:    Start the day calm and focused
+  Cadence:    --daily
+  Intention:  intention_01… — Improve mental health   (or: standalone)
+  Category:   health/mindfulness  → focus: Play         (or: none)
+  Template:   "10 minutes of meditation"               (or: none)
+  Context:    —  (inherited from intention)
+  Properties: none
+  Reminder:   none
 ```
 
-**Weekly on one day:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --weekly monday \
-  --actor claude-code
-```
-
-**Weekly on multiple days:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --weekly-on mon,wed,fri \
-  --actor claude-code
-```
-
-**Monthly:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --monthly 15 \
-  --actor claude-code
-```
-
-**Quarterly:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --quarterly \
-  --actor claude-code
-```
-
-**Yearly:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --yearly-month 6 --yearly-day 15 \
-  --actor claude-code
-```
-
-**Every N days:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --every 3 \
-  --actor claude-code
-```
-
-**Flexible schedule:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --free-weekly 3 \
-  --actor claude-code
-```
-
-**Cue-based:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --cue "After meals" \
-  --actor claude-code
-```
-
-**Cue-based with target:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --cue "When I see interesting code" \
-  --target "3/week" \
-  --actor claude-code
-```
-
-**With action template:**
-```bash
-rei habit create \
-  --name "NAME" \
-  --purpose "PURPOSE" \
-  --daily \
-  --action-template "TEMPLATE" \
-  --intention <INTENTION_ID> \
-  --actor claude-code
-```
-
-### Break Habits
-
-Add `--break` flag to create a Break habit:
+### 4. Create
 
 ```bash
-rei habit create \
-  --name "No social media before noon" \
-  --purpose "Protect my morning focus time" \
-  --daily \
-  --break \
-  --actor claude-code
+rei --actor claude-code habit create -n "NAME" -p "PURPOSE" CADENCE_FLAGS \
+  [-i INTENTION_ID] [--action-template "TEMPLATE"] [--break]
 ```
 
-**After creating a Break habit, start abstinence tracking:**
+Capture `HABIT_ID` from the output (`grep -o 'habit_[0-9a-z]*' | head -1`). If none is printed,
+find it: `rei habit list --json | jq -r --arg n "NAME" '.[] | select(.name == $n) | .habitId'`.
+Without a `HABIT_ID`, stop and report — don't run the follow-up commands.
+
+Then, as planned:
+
 ```bash
-rei habit start-abstinence <HABIT_ID>
+rei --actor claude-code category create "NAME" [-p PARENT_SLUG] [-d "DESC"] [-f FOCUS_ID]   # only if creating
+rei --actor claude-code habit set-category HABIT_ID CATEGORY_SLUG
+rei --actor claude-code habit set-context HABIT_ID "CONTEXT"        # unlinked habits only
+rei --actor claude-code habit set-property --habit HABIT_ID KEY VALUE
+rei --actor claude-code habit start-abstinence HABIT_ID             # break habits
+rei --actor claude-code habit remind HABIT_ID -d "DESCRIPTION" --at "TIME"
 ```
+
+`--at` accepts natural and ISO times (`rei help time`). Check each subcommand's `--help`
+before using an argument form not shown here.
+
+### 5. Verify
+
+Habit writes may print an error yet exit `0`, so read back:
+
+```bash
+rei habit show HABIT_ID --json \
+  | jq '.habit | {name, polarity, scheduleType, scheduleData, intentionId, context, actionTemplate, abstinenceStartedAt, status}'
+```
+
+Check name, polarity, schedule, linked intention, template, context, and (for break habits)
+`abstinenceStartedAt`. The category isn't in this JSON — rely on the `set-category` output and
+report it as such. Retry a missing write once, then report it as failed.
 
 ## Output Format
-
-After creating the habit, provide a summary:
 
 ```
 ## Habit Created
 
-- **Name**: [name]
-- **ID**: [habit_id]
+- **Name**: <name>  (<habit_id>)
 - **Type**: Build / Break
-- **Purpose**: [purpose]
-- **Cadence**: [schedule description or cue description]
-- **Linked Intention**: [intention_title] ([intention_id]) or "(standalone)"
-- **Focus Area**: [focus_name] or "(not assigned)"
-- **Action Category**: [category_slug] or "(not set)"
-- **Action Template**: [template] or "(not set)"
-- **Context**: [context] or "(inherited from intention)" or "(not set)"
+- **Purpose**: <purpose>
+- **Cadence**: <human-readable schedule or cue + target>
+- **Linked Intention**: <title> (<intention_id>) or "standalone"
+- **Category**: <slug> (focus: <focus>) or "none"
+- **Action Template / Context / Properties / Reminder**: <values or "none">
+- **Failed / Skipped**: <item — reason> or "nothing"
 
 ### Next Steps
-
-**For Build habits:**
-1. Record your first action: `rei habit record-action` (add `--category SLUG` if category was set)
-2. Check habit status: `rei habit show <HABIT_ID>`
-3. View all habits: `rei habit list`
-
-**For Break habits:**
-1. Start abstinence tracking: `rei habit start-abstinence <HABIT_ID>`
-2. If relapse occurs: `rei habit log-occurrence <HABIT_ID>`
-3. Check habit status: `rei habit show <HABIT_ID>`
+- Build: `rei habit record-action HABIT_ID` (uses the template; `--at`, `--duration` available)
+- Break: `rei habit log-occurrence HABIT_ID -n "trigger"` if a relapse happens
+- Progress: `rei habit status`, `rei habit tracker HABIT_ID`
+- Obstacle: `rei blocker declare --habit HABIT_ID "DESCRIPTION"` (pauses the habit)
 ```
-
-## Important Notes
-
-- Always include `--actor claude-code` when creating habits
-- If the user provides all details upfront, skip the questions and create directly
-- **Polarity**: Default is Build; use `--break` for Break habits
-- **Schedules**: `--daily`, `--weekly DAY`, `--weekly-on DAY1,DAY2,...`, `--monthly DAY`, `--quarterly`, `--yearly-month M --yearly-day D`, `--every N`
-- **Flexible**: `--free-weekly N`, `--free-monthly N`, `--free-quarterly N`, `--free-yearly N`
-- **Cue-based**: `--cue "DESCRIPTION"` with optional `--target "N/period"`
-- Day formats: full name (monday) or short (mon)
-- Link habits to intentions when possible for better tracking
-- Only set context on unlinked habits (linked habits inherit from intention)
-- Action templates save time when recording repeated actions
-- Habits start as Active by default
-- Use `rei habit pause` to temporarily pause a habit
-- Use `rei habit retire` to permanently retire a habit
-- **Categories** can be assigned to actions recorded from habits using `--category SLUG` with `rei habit record-action`
-- Habits don't have categories directly - but actions from habits can be categorized
-
-## Common Habit Examples
-
-### Build Habits
-
-**Morning practices:**
-- Morning journaling (daily) -> Create focus
-- Morning meditation (daily) -> Play focus
-- Morning exercise (--weekly-on mon,wed,fri) -> Play focus
-
-**Learning practices:**
-- Daily reading (daily) -> Read focus
-- Language study (--weekly-on tue,thu,sat) -> Study focus
-- Code practice (daily) -> Study focus
-
-**Evening practices:**
-- Evening reflection (daily) -> Create focus
-- Weekly planning (--weekly sunday) -> Study focus
-- Gratitude journaling (daily) -> Create focus
-
-**Flexible practices:**
-- Read 3 books per month (--free-monthly 3) -> Read focus
-- Exercise 4 times per week (--free-weekly 4) -> Play focus
-- Write 2 blog posts per quarter (--free-quarterly 2) -> Create focus
-
-**Cue-based practices:**
-- Log interesting quotes (--cue "When I encounter good writing") -> Read focus
-- Take walking breaks (--cue "After 2 hours of focused work") -> Play focus
-
-### Break Habits
-
-**Digital wellness:**
-- No social media before noon (--daily --break)
-- No phone during meals (--cue "During meals" --break)
-- No screens after 10pm (--daily --break)
-
-**Health:**
-- No late-night snacking (--daily --break)
-- No skipping workouts (--free-weekly 4 --break)
-
-**Productivity:**
-- No email first thing (--daily --break)
-- No multitasking during deep work (--cue "During focus blocks" --break)
