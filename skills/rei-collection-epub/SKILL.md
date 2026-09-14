@@ -1,382 +1,181 @@
 ---
 name: rei-collection-epub
-description: Export a Rei collection to EPUB format using pandoc, with automatic chapter ordering inferred from titles, edges, content analysis, and timestamps.
-allowed-tools: AskUserQuestion, Bash, Read, Write, Glob, Grep
+description: Export a Rei collection to EPUB with pandoc — resolve its note, link, and doc members into one chapter per work (preferring a link's full archive note over its summary), infer chapter order from title sequence markers, ordering edges, content cross-references, and addedAt timestamps, confirm the order, and build the book with a table of contents.
+allowed-tools: AskUserQuestion, Bash, Read, Write
 ---
 
 # Rei Collection to EPUB
 
-This skill takes a Rei collection (manual or virtual), reads its members, infers a logical
-chapter order, and produces an EPUB file using pandoc.
+Turns a Rei collection into an EPUB: fetch its members, resolve each into chapter content,
+infer a reading order, confirm it with the user, and run pandoc.
 
 ## When to Use
 
-Activate when the user says things like:
 - "Export this collection as an epub"
 - "Turn my collection into an ebook"
-- "Create an epub from collection ..."
-- "Generate an epub for ..."
-- "Make a book from my collection"
+- "/rei-collection-epub <collection>"
 
 ## Key Concepts
 
-### Collections
+- **Collections** are **manual** (curated members) or **virtual** (a saved query that matches
+  notes at read time). `rei help collections` has the details.
+- **Member shape** (`rei collection show ID --json` → `.members[]`): `memberId`, `addedAt`,
+  `displayName`, `memberRef.type` (`member_note` | `member_link` | `member_doc`),
+  `memberRef.data` (entity ID), `relativePath` (absolute file path for notes/docs; `null` for
+  links). **Link members have `displayName: null`** — get the title and URL from
+  `rei link show LINK_ID --json` (`.title`, `.url`).
+- **Ingested collections pair links with notes.** Collections built by `rei-ingest-url-collection`
+  / `rei-ingest-markdown` often contain a link plus its `summarizes` note, and the link may also
+  have an `archives` note holding the full page. Treat the link and its notes as **one work**,
+  not two or three chapters.
 
-A Rei collection groups knowledge artifacts (notes, links, docs). Collections can be
-**manual** (curated membership) or **virtual** (query-driven). Members have a `displayName`,
-`addedAt` timestamp, a `memberRef` (type + ID), and a `relativePath` to the file on disk.
+## Workflow
 
-### Ordering Signals
+### 1. Select the collection
 
-The skill uses multiple signals to infer chapter order, listed by priority:
-
-1. **Explicit sequence markers in titles** — "Part I", "Chapter 3", "01 -", "#2:", ordinals
-   like "First", "Second"
-2. **Edges between members** — predicates like `follows`, `precedes`, or `continues` that
-   encode explicit ordering relationships
-3. **Content analysis** — cross-references between notes, concept introduction vs. usage,
-   wikilinks, and narrative continuity markers inside the body text
-4. **`addedAt` timestamps** — the order members were added to the collection, used as a
-   fallback when no stronger signal exists
-
-### Member Types
-
-- `member_note` — a Rei note; content retrieved via `rei note print <ID>`
-- `member_link` — a Rei link; metadata only (URL + title), no body content
-- `member_doc` — a Rei document; content read from its file path
-
-## Workflow Overview
-
-1. **Select collection** — identify which collection to export
-2. **Fetch members** — retrieve collection metadata and member list
-3. **Infer order** — analyze titles, edges, content, and timestamps to propose chapter sequence
-4. **Confirm order** — present the proposed order to the user for approval or reordering
-5. **Extract content** — read the body of each member in order
-6. **Configure metadata** — set EPUB title, author, and other pandoc metadata
-7. **Generate EPUB** — assemble markdown and run pandoc
-8. **Summary** — report the result
-
-## Instructions for Claude
-
-### Phase 1: Select Collection
-
-If the user provided a collection name in their request, use it directly. Otherwise, list
-available collections and ask:
+Use the name or ID the user gave; otherwise list and ask:
 
 ```bash
-rei collection list
+rei collection list --json \
+  | jq -r '.collections[] | "\(.collection.collectionId)\t\(.memberCount)\t\(.collection.name)"'
 ```
 
-```
-Question: "Which collection would you like to export as an EPUB?"
-Header: "Collection"
-Options:
-- <list collection names from the output above>
-```
+Always pass the collection ID or exact name — `rei collection show` with no argument opens an
+fzf picker. Check `pandoc --version` now; if missing, stop and say so.
 
-Store the chosen collection name as `COLLECTION_NAME`.
-
-### Phase 2: Fetch Members
-
-Retrieve the collection and its members as JSON:
+### 2. Fetch and resolve members
 
 ```bash
-rei collection show "COLLECTION_NAME" --json
+rei collection show COLLECTION_ID --json
 ```
 
-Parse the JSON output. Extract:
-- `collection.name` — the collection title
-- `collection.description` — used as the EPUB description
-- `members[]` — array of member objects
+Keep `.collection.name` and `.collection.description`. For a virtual collection
+(`.collection.kind.type`), if `.members` is empty run `rei collection exec COLLECTION_ID` (text
+only, no `--json`) and take the `note_...` IDs from its output. If there are no members, stop.
 
-Each member has:
-- `memberId` — unique member ID
-- `displayName` — human-readable title
-- `memberRef.type` — one of `member_note`, `member_link`, `member_doc`
-- `memberRef.data` — the entity ID (e.g., `note_01k...`)
-- `relativePath` — file path on disk (for notes and docs)
-- `addedAt` — ISO timestamp of when the member was added
+Resolve members into **works**:
 
-If the collection has zero members, inform the user and stop.
+1. For each link member, read its incoming note edges:
 
-If the collection has link-only members (`member_link`), warn the user that links have no
-body content and ask whether to proceed (the epub would contain only titles and URLs) or stop.
+   ```bash
+   rei link show LINK_ID --json | jq -r '.title, .url'
+   rei edge show LINK_ID --json \
+     | jq -r --arg l LINK_ID '.[] | select(.status == "active" and .targetId == $l and .sourceType == "note")
+              | "\(.predicateKey)\t\(.sourceId)"'
+   ```
 
-### Phase 3: Infer Order
+   The work's body is the `archives` note if one exists (full text), else the `summarizes` note,
+   else just the title and URL. Note members that are an `archives` or `summarizes` source of a
+   link already in the collection are folded into that work, not emitted separately.
+2. A collection holding both `Archive: X` and `Summary of "X"` notes with no link member is the
+   same pattern — pair them by the shared title (or by the link both point at via
+   `rei edge show NOTE_ID --json`) and keep the archive.
+3. Ask once how to handle pairs if it isn't obvious: **full archive only** (recommended),
+   archive followed by its summary, or summaries only.
+4. Remaining notes and docs are one work each. A link with no note is a title+URL stub — warn
+   if many works are stubs, since the book will have little content.
 
-Apply the following ordering strategy, in priority order:
+Chapter title: the link title for link-based works; otherwise `displayName` (falling back to
+`rei note show NOTE_ID --json | jq -r .title`), with `Archive: ` / `Summary of "…"` wrappers
+stripped.
 
-#### 3a: Check for Explicit Sequence Markers in Titles
+### 3. Infer order
 
-Scan each `displayName` for patterns that indicate ordering:
+Apply the strongest signal available; use weaker ones only to break ties.
 
-- **Numbered parts**: "Part I", "Part II", "Part III" (Roman numerals); "Part 1", "Part 2"
-- **Numbered chapters**: "Chapter 1", "Chapter 2"; "Ch. 1", "Ch. 2"
-- **Leading numbers**: "01 -", "02 -", "1.", "2.", "#1", "#2"
-- **Ordinal words**: "First", "Second", "Third", "Introduction", "Conclusion", "Epilogue",
-  "Preface", "Foreword", "Appendix"
-- **Series indicators**: "Part I: ...", "— Part II", "(3/5)"
+**a. Title sequence markers** — `Part I`/`Part 2`, `Chapter 3`, leading `01 -` / `1.` / `#1`,
+`(3/5)`, ordinal words. If most works carry one, sort by it. Positional titles: `Preface`,
+`Foreword`, `Introduction`, `Prologue` first; `Conclusion`, `Epilogue`, `Afterword`, `Appendix`
+last.
 
-If sequence markers are found in a majority of members, sort by the extracted sequence number.
-Place special positional titles first/last:
-- **First**: "Preface", "Foreword", "Introduction", "Prologue"
-- **Last**: "Conclusion", "Epilogue", "Afterword", "Appendix"
+**b. Ordering edges** — check which sequence-like predicates exist
+(`rei predicate list --json | jq -r '.[].predicateKey'`, e.g. `follows`, `precedes`, `next`),
+then look for them between members with `rei edge show ENTITY_ID --json`. A chain gives the
+order directly.
 
-#### 3b: Check for Ordering Edges
+**c. Content** — read each body (`rei note print NOTE_ID`; docs via their `relativePath`) and
+build a precedence graph:
+- a work that mentions another work's title, or links to it (`rei note outgoing-links NOTE_ID
+  --json`, `[[wikilinks]]`), comes after it;
+- a work that introduces a term another work uses without introduction comes first;
+- backward references ("as we saw", "recall that", "building on") suggest later, forward
+  references ("in the next part", "we will see") suggest earlier;
+- foundational/motivating content precedes synthesis and advanced application.
 
-If title-based ordering is insufficient, check for edges between the collection's members:
+Topologically sort; cycles and ties fall through to the next signal.
 
-```bash
-rei edge show <MEMBER_ENTITY_ID> --json
-```
+**d. `addedAt`** — earliest first.
 
-Run this for each member. Look for edges with predicates that imply sequence (e.g.,
-`follows`, `precedes`, `continues`, `next`, `previous`). If such edges form a chain, use them
-to derive the order.
+Present the numbered order with the method used, and ask: proceed (recommended), let me
+reorder (user gives e.g. `3, 1, 2`), or reverse.
 
-#### 3c: Analyze Content for Ordering Clues
+### 4. Assemble chapters
 
-If titles and edges are insufficient, read the body of every member to look for ordering
-signals in the text itself. For each note member, run:
+Work in a temporary directory (`WORK=$(mktemp -d)`). For each work in order, write
+`$WORK/ch-NNN-<slug>.md` (`printf '%03d'`, slug lowercase-hyphenated, ≤40 chars) — reusing
+bodies already fetched in step 3:
 
-```bash
-rei note print <NOTE_ID>
-```
+- Note: `rei note print NOTE_ID`. Doc: read `relativePath`. Link stub: `# TITLE` then the URL.
+- Ensure the chapter starts with exactly one H1 carrying the chapter title: replace a leading
+  `# Archive: …` / `# Summary of "…"` heading, or prepend `# TITLE` if there is none. Demote any
+  further H1s in the body to H2 so the TOC stays one entry per work.
+- For link-based works, add a `Source: <url>` line under the heading if the body lacks one.
+- Skip empty bodies and warn.
 
-For doc members, read the file at `relativePath`. Skip link-only members (no body).
+Chapter bodies often contain their own YAML frontmatter (archive notes store the source page's
+verbatim); pandoc would let it **override the book's title and author**. The pandoc command
+below disables `yaml_metadata_block` for that reason — keep it.
 
-Scan the collected content for these signal types, strongest first:
+### 5. Metadata
 
-**Cross-references by title.** Look for mentions of other members' display names or
-recognizable fragments of them. If chapter B mentions chapter A's title (e.g., "as we saw in
-*Processes and State Machines*" or "building on Part I"), that implies A precedes B. Build a
-directed graph of "refers-to" relationships and topologically sort it. Cycles mean the signal
-is ambiguous for those nodes — fall through to weaker signals for them.
-
-**Wikilinks between notes.** Rei notes may contain `[[note_ID]]` wikilinks. If note B links
-to note A, A likely comes first (B depends on knowledge introduced in A). Use `rei note
-outgoing-links <NOTE_ID>` to discover these. Build the same directed dependency graph as with
-title cross-references and topologically sort.
-
-**Concept introduction vs. usage.** Identify key domain terms, acronyms, or definitions that
-are *introduced* in one chapter (look for phrases like "we define", "let us introduce",
-"referred to as", ": a ...", bold or italic first-use markers) and *used without introduction*
-in another. A chapter that introduces a term should precede chapters that assume it. Focus on
-terms that appear in at least two members — single-member terms are not useful for ordering.
-
-**Narrative continuity markers.** Detect language that implies sequencing:
-
-- **Backward references** (the chapter using these comes later): "as we discussed",
-  "recall that", "as shown above", "in the previous section", "building on",
-  "we established that", "earlier we saw"
-- **Forward references** (the chapter using these comes earlier): "in the next section",
-  "we will see", "later we will", "the following chapter", "this sets up",
-  "we will return to this"
-
-Count backward-reference and forward-reference markers per chapter. Chapters heavy on
-backward references tend to come later; chapters heavy on forward references tend to come
-earlier. Use this as a relative ranking signal.
-
-**Structural progression.** Look at the complexity arc of the content:
-
-- Chapters that start with foundational definitions, motivation, or "why" framing tend to
-  come first
-- Chapters that synthesize, compare alternatives, or present advanced applications tend to
-  come last
-- Chapters that conclude with "next steps", "future work", or a transition sentence pointing
-  to the next topic provide a natural chain
-
-**Combining content signals.** Merge the evidence from all content signals into a single
-ordering:
-
-1. Start with the topological sort from cross-references and wikilinks (strongest signal)
-2. Break ties using concept-introduction order (introducers before consumers)
-3. Break remaining ties using narrative marker counts (more backward refs = later)
-4. Break remaining ties using structural progression (foundational before applied)
-
-If the content analysis produces a clear total order, use it. If it produces a partial order
-(some members are unambiguous, others are tied), combine with `addedAt` timestamps to break
-the remaining ties.
-
-#### 3d: Fall Back to `addedAt` Timestamps
-
-If titles, edges, and content analysis do not provide clear ordering, sort members by their
-`addedAt` timestamp (earliest first). This assumes the user added them in reading order.
-
-### Phase 4: Confirm Order
-
-Present the proposed chapter order to the user:
-
-```
-## Proposed Chapter Order
-
-1. <displayName 1>
-2. <displayName 2>
-3. <displayName 3>
-...
-
-Ordering method: <"title sequence markers" | "edge relationships" | "content analysis" | "chronological (addedAt)">
-```
-
-```
-Question: "Does this chapter order look correct?"
-Header: "Chapter Order"
-Options:
-- Yes, proceed (Recommended)
-- Let me reorder — I'll provide the correct sequence
-- Reverse the order
-```
-
-If the user wants to reorder, ask them to provide the numbers in their preferred order (e.g.,
-"3, 1, 2") and reorder accordingly.
-
-### Phase 5: Extract Content
-
-For each member in the confirmed order, extract its content. If content was already fetched
-during Phase 3c (content analysis), reuse it rather than fetching again.
-
-#### For `member_note` members:
-
-```bash
-rei note print <NOTE_ID>
-```
-
-Capture the markdown output. If the note content starts with an H1 heading, use it as-is. If
-it does not start with an H1, prepend `# <displayName>` as the chapter heading.
-
-#### For `member_doc` members:
-
-Read the file at the member's `relativePath` directly using the Read tool. If the content
-does not start with an H1, prepend `# <displayName>`.
-
-#### For `member_link` members:
-
-Generate a minimal chapter:
-
-```markdown
-# <displayName>
-
-<URL from link metadata>
-```
-
-If the link has an associated note (check edges for notes that `summarizes` this link), fetch
-that note's content and include it after the URL.
-
-#### Content Assembly
-
-Write each chapter to a temporary file in sequence:
-
-```bash
-mkdir -p /tmp/rei-epub-work
-```
-
-For each chapter (in order), write to `/tmp/rei-epub-work/ch-NN-<slug>.md` where `NN` is the
-zero-padded chapter number and `<slug>` is a slugified version of the display name (lowercase,
-hyphens, max 40 chars).
-
-### Phase 6: Configure Metadata
-
-Ask the user for EPUB metadata:
-
-```
-Question: "What should the EPUB title be?"
-Header: "Title"
-Options:
-- Use collection name: "<COLLECTION_NAME>" (Recommended)
-- Let me type a custom title
-```
-
-```
-Question: "Who is the author?"
-Header: "Author"
-Options:
-- Let me type the author name
-```
-
-Create a pandoc metadata file at `/tmp/rei-epub-work/metadata.yaml`:
+Title defaults to the collection name; ask for the author if the user hasn't said (for a
+single-author series, suggest the author from the archive notes' `Author:`/frontmatter).
+Description is the collection description.
 
 ```yaml
----
-title: "<EPUB_TITLE>"
-author: "<AUTHOR>"
-description: "<COLLECTION_DESCRIPTION>"
+# $WORK/metadata.yaml
+title: "EPUB_TITLE"
+author: "AUTHOR"
+description: "COLLECTION_DESCRIPTION"
 lang: en
----
 ```
 
-### Phase 7: Generate EPUB
+Set `lang` from the content if it isn't English.
 
-Ask where to write the output:
+### 6. Build
 
-```
-Question: "Where should the EPUB be saved?"
-Header: "Output Path"
-Options:
-- Default: ~/Downloads/<slugified-collection-name>.epub (Recommended)
-- Let me specify a path
-```
-
-Run pandoc to produce the EPUB:
+Default output: `~/Downloads/<collection-slug>.epub` unless the user gives a path.
 
 ```bash
-pandoc --metadata-file=/tmp/rei-epub-work/metadata.yaml \
-  -f markdown \
-  -t epub \
-  --toc \
-  --toc-depth=2 \
-  -o "<OUTPUT_PATH>" \
-  /tmp/rei-epub-work/ch-*.md
+pandoc --metadata-file="$WORK/metadata.yaml" \
+  -f markdown-yaml_metadata_block -t epub \
+  --toc --toc-depth=2 --split-level=1 \
+  --resource-path="$WORK:NOTES_DIR" \
+  -o "OUTPUT_PATH" "$WORK"/ch-*.md
 ```
 
-The `--toc` flag generates a table of contents from the H1/H2 headings. The glob
-`ch-*.md` expands in alphabetical order, which matches the zero-padded numbering scheme.
+`NOTES_DIR` is the directory of the note members' `relativePath`, so relative image embeds
+resolve. The zero-padded names keep the glob in chapter order.
 
-If pandoc fails, show the error and attempt to diagnose:
-- Missing pandoc: suggest `nix-env -iA nixpkgs.pandoc` or `brew install pandoc`
-- Invalid markdown: identify the problematic chapter and show a preview
+Verify before reporting: the file exists and is non-empty, and
+`unzip -p "OUTPUT_PATH" EPUB/content.opf | grep -o '<dc:title[^<]*'` shows the intended title.
+On pandoc errors, identify the failing chapter (build chapters individually if needed). Remove
+`$WORK` on success and failure.
 
-After success, clean up temporary files:
-
-```bash
-rm -rf /tmp/rei-epub-work
-```
-
-### Phase 8: Summary
+## Output Format
 
 ```
 ## EPUB Generated
 
-- **Collection**: <COLLECTION_NAME>
-- **Title**: <EPUB_TITLE>
-- **Author**: <AUTHOR>
-- **Chapters**: <N>
-- **Ordering**: <method used>
-- **Output**: <OUTPUT_PATH>
-- **File size**: <size>
+- **Collection**: <name> (<collection_id>)
+- **Title / Author**: <title> / <author>
+- **Chapters**: <N> (<K> link stubs, <S> skipped)
+- **Ordering**: <title markers | edges | content analysis | addedAt | user-specified>
+- **Output**: <path> (<size>)
 
-### Chapter List
-
-1. <chapter 1 displayName>
-2. <chapter 2 displayName>
+### Chapters
+1. <title>  — <archive | summary | note | doc | link stub>
 ...
 
-### Next Steps
-
-1. Open the EPUB: `open "<OUTPUT_PATH>"`
-2. Verify chapter order and formatting in your reader
-3. Re-run with a different order if needed
+Open with: `open "<path>"`
 ```
-
-## Important Notes
-
-- Always use `rei collection show --json` for structured data — do not parse table output
-- Always use `rei note print <ID>` to get note content, not `cat` on the file (print handles
-  any preprocessing the CLI applies)
-- The glob `/tmp/rei-epub-work/ch-*.md` relies on zero-padded chapter numbers — use
-  `printf "%02d"` for collections up to 99 chapters, `"%03d"` for larger ones
-- If a note's content is empty or only whitespace, skip it and warn the user
-- Pandoc must be installed — check with `which pandoc` before proceeding and report clearly
-  if it's missing
-- Clean up `/tmp/rei-epub-work` both on success and on failure
-- For virtual collections, run `rei collection exec "NAME" --json` if `show` does not
-  include members, then use the exec output to discover member IDs
