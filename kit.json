@@ -24,8 +24,8 @@
     },
     {
       "name": "rei-scaffold-kit-skill",
-      "description": "Scaffold new Claude Code skills and agents for Rei, following established conventions from the rei codebase",
-      "version": "1.0.0",
+      "description": "Scaffold a new skill or agent for rei-kit — research the rei commands it will drive, write it to match the current kit conventions, and register it in kit.json",
+      "version": "2.0.0",
       "path": "skills/rei-scaffold-kit-skill",
       "files": ["SKILL.md"]
     },

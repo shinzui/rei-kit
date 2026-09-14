@@ -1,593 +1,149 @@
 ---
 name: rei-scaffold-kit-skill
-description: Scaffold new Claude Code skills and agents for Rei, following established conventions. Use when creating a new skill or agent definition for rei-kit.
-allowed-tools: AskUserQuestion, Read, Write, Edit, Glob, Bash
+description: Scaffold a new skill or agent for rei-kit — research the rei commands it will drive, write it to match the current kit conventions, and register it in kit.json. Use when creating a new skill or agent definition for rei-kit.
+allowed-tools: AskUserQuestion, Bash, Read, Write, Edit, Glob, Grep
 ---
 
-# Rei Scaffold
+# Rei Scaffold Kit Skill
 
-This skill scaffolds new Claude Code skills and agents for the rei-kit repository. It
-examines existing skills and agents in this repo as structural reference, uses the rei CLI
-help system and rei repo for domain context, gathers requirements interactively, generates
-files following established conventions, and registers them in `kit.json`.
+Creates a new **skill** (`skills/<name>/SKILL.md`) or **agent** (`agents/<name>.md`) in this
+repo and registers it in `kit.json`. The hard part is not the file format — it is getting the
+rei commands, flags, and domain modeling right, so most of the effort goes into research.
 
-## When to Use
+## How kit content is consumed
 
-Activate when the user says things like:
-- "Create a new skill"
-- "Scaffold an agent"
-- "Add a skill for..."
-- "I need a new agent that..."
-- "Generate a skill definition"
-- "Create a guide agent for..."
-- "/rei-scaffold-kit-skill"
+`rei kit install` copies items listed in `kit.json` into **both** providers:
 
-## Reference Sources
+- **Claude Code** — `.claude/skills/<name>/` and `.claude/agents/<name>.md`.
+- **Codex** — `.agents/skills/<name>/`, and agents wrapped into `.codex/agents/<name>.toml`
+  (`name`, `description`, and the Markdown body as `developer_instructions`).
 
-### Structural reference (this repo)
+Both scopes are also loaded into `rei agent` sessions, which run under whichever provider
+`REI_LLM_PROVIDER` / `llm.commands.*` selects. Consequences for what you write:
 
-Existing skills and agents in rei-kit are the source of truth for format and conventions:
+- The **body** must stand on its own. Agent frontmatter (`tools`, `model`) and skill
+  `allowed-tools` are Claude-only; Codex sees only name, description, and body.
+- The **description** is what both providers use to decide when to activate the item and what
+  `rei kit list` / the fzf picker shows. Make it specific: what it does, the key steps, and
+  when to use it over a sibling.
+- Each entry's `version` drives `rei kit status` outdated detection, so new items start at
+  `1.0.0` and any edit to an existing item bumps it (patch: wording/fixes, minor: new
+  behavior, major: changed workflow or inputs).
 
-- **Skills** in `skills/*/SKILL.md` — e.g., `rei-bootstrap`, `rei-bootstrap-habit`,
-  `rei-summarize-links`
-- **Agents** in `agents/*.md` — (as they are added to the kit)
+## Workflow
 
-Always read 1-2 existing examples from this repo before generating, so the output matches
-established conventions.
+### 1. Clarify
 
-### Domain context (rei CLI and rei repo)
+From the request, determine: skill or agent, name, purpose, inputs, and what rei entities it
+reads or writes. Ask (one AskUserQuestion call, only for what is actually missing) rather than
+walking through a fixed questionnaire. If the request is complete, skip straight to research.
 
-When the generated skill or agent needs to reference rei commands, entity types, or concepts:
+Naming: `rei-<verb>-<object>` for skills (`rei-ingest-url`, `rei-note-from-tmp`); agents end in
+`-guide` (conversational) or `-expert` (reference).
 
-- **`rei --help`** and **`rei <command> --help`** — authoritative, always-current command
-  reference for syntax, flags, and subcommands
-- **Rei repo** at `/Users/shinzui/Keikaku/bokuno/rei-project/rei`:
-  - `docs/user/cli/` — CLI command documentation
-  - `docs/user/concepts.md` — Key concepts and primitives
-  - Use for understanding domain concepts, not for structural skill/agent format
+### 2. Research
 
-## Workflow Overview
+**Siblings.** Check `kit.json` and `skills/` for overlapping items. Read the closest one or two
+in full — recent skills (`rei-note-from-tmp`, `rei-bookmark-url`, `rei-curate-ontology`) reflect
+current conventions better than older ones. If an existing skill already defines a discipline
+the new one needs (e.g. topic modeling in `rei-bookmark-url`), reference it instead of
+restating it, and state when to use the sibling instead.
 
-1. **Choose artifact type** — Skill or Agent
-2. **Study references** — Read existing examples from this repo; check rei CLI for domain context
-3. **Gather metadata** — Name, description, tools, domain focus
-4. **Gather content** — Workflow phases (skills) or domain knowledge (agents)
-5. **Generate the file** — Write to the correct location in rei-kit
-6. **Register in kit.json** — Add the manifest entry
-7. **Summary** — Show what was created and next steps
-
-## Instructions for Claude
-
-### Phase 1: Choose Artifact Type
-
-If the user hasn't already specified, ask:
-
-```
-Question: "What would you like to scaffold?"
-Header: "Type"
-Options:
-- Skill: A workflow that guides users through a task (e.g., bootstrapping a habit, summarizing links)
-- Agent: A domain expert or guide that answers questions and provides advice (e.g., habit guide, intention expert)
-```
-
-If the user provided enough context in their request (e.g., "create a skill for..."), skip
-this question and proceed directly.
-
-### Phase 2: Study References
-
-Before gathering details, read existing examples from **this repo** to calibrate your output.
-Then check the rei CLI for domain context if the artifact will reference rei commands.
-
-**Step 2a: Read structural references from rei-kit**
+**Rei itself.** Never write a command or flag from memory — verify each against the CLI:
 
 ```bash
-# List existing skills in this repo
-ls skills/
-```
-
-Read 1-2 existing skill files to understand the format:
-- `skills/rei-bootstrap-habit/SKILL.md` — good example of an interactive workflow skill
-- `skills/rei-bootstrap/SKILL.md` — example of a larger multi-phase skill
-- `skills/rei-summarize-links/SKILL.md` — example of a processing-oriented skill
-
-For agents, check what exists:
-```bash
-ls agents/
-```
-
-Read any existing agent files. If none exist yet, use the agent template in Phase 5 as the
-canonical format.
-
-**Step 2b: Check rei CLI for domain context (if needed)**
-
-If the skill or agent will reference rei commands or concepts, explore the CLI help:
-
-```bash
-# Top-level commands
 rei --help
-
-# Specific command help
-rei <command> --help
-rei <command> <subcommand> --help
+rei <command> [<subcommand>] --help
+rei help --list          # conceptual topics: edges, topics, projects, custom-properties, ...
+rei help <topic>
 ```
 
-For deeper domain context, consult the rei repo docs:
-```bash
-# CLI reference docs
-ls /Users/shinzui/Keikaku/bokuno/rei-project/rei/docs/user/cli/
-
-# Concepts
-cat /Users/shinzui/Keikaku/bokuno/rei-project/rei/docs/user/concepts.md
-```
-
-Use the rei repo **only for domain understanding** — do not copy its skill/agent format.
-
-### Phase 3: Gather Metadata
-
-#### For Skills
-
-Ask about the skill's identity:
-
-```
-Question: "What should this skill be named? (Use kebab-case, e.g., rei-review-weekly)"
-Header: "Name"
-Options:
-- Let me type the name
-```
-
-**Naming conventions:**
-- Prefix with `rei-` for Rei-specific skills
-- Use action verbs: `rei-bootstrap-X`, `rei-review-X`, `rei-summarize-X`, `rei-update-X`
-- Keep it short and descriptive
-
-Then ask about purpose:
-
-```
-Question: "In one sentence, what does this skill do?"
-Header: "Purpose"
-Options:
-- Let me describe it
-```
-
-Then ask about the tools needed:
-
-```
-Question: "What kind of work does this skill do?"
-Header: "Tools"
-Options:
-- Interactive workflow (asks questions, runs CLI commands) — AskUserQuestion, Bash, Read
-- File generation (creates or modifies files) — AskUserQuestion, Read, Write, Edit, Glob, Bash
-- Read-only analysis (searches and reads code) — Read, Grep, Glob
-- CLI orchestration (runs rei commands based on user input) — AskUserQuestion, Bash, Read
-```
-
-#### For Agents
-
-Ask about the agent's identity:
-
-```
-Question: "What should this agent be named? (Use kebab-case, e.g., rei-cycle-expert)"
-Header: "Name"
-Options:
-- Let me type the name
-```
-
-**Naming conventions:**
-- Prefix with `rei-`
-- Suffix with `-expert` for domain knowledge agents
-- Suffix with `-guide` for conversational coaching agents
-- Examples: `rei-cycle-expert`, `rei-habit-guide`, `rei-fzf-expert`
-
-Then ask about purpose:
-
-```
-Question: "In one sentence, what is this agent an expert on?"
-Header: "Expertise"
-Options:
-- Let me describe it
-```
-
-Then determine the agent type:
-
-```
-Question: "What kind of agent is this?"
-Header: "Style"
-Options:
-- Domain expert: Answers technical questions about a specific area, includes quick-reference tables and file locations (Recommended)
-- Guide: Helps users accomplish tasks conversationally, includes examples and troubleshooting
-- Pattern expert: Specializes in a cross-cutting concern (e.g., testing, code style, projections)
-```
-
-Then ask about tools:
-
-```
-Question: "What tools should this agent have access to?"
-Header: "Tools"
-Options:
-- Read-only (Read, Grep, Glob) — for research and analysis (Recommended)
-- Read + Bash (Read, Bash) — can also run commands to inspect state
-- Read + Bash + Grep + Glob — full read-only exploration
-```
-
-### Phase 4: Gather Content
-
-#### For Skills
-
-Ask about the workflow:
-
-```
-Question: "Describe the main steps of this skill's workflow. What should happen from start to finish?"
-Header: "Workflow"
-Options:
-- Let me describe the workflow
-```
-
-Follow up to understand:
-- How many phases are there?
-- What questions should be asked at each phase?
-- What commands or file operations happen?
-- What does success look like?
-
-If the skill involves `rei` CLI commands, ask:
-
-```
-Question: "Which rei commands does this skill use? (e.g., rei habit create, rei intention list)"
-Header: "Commands"
-Options:
-- Let me list them
-- I'm not sure — help me figure it out
-```
-
-If the user is unsure, explore the rei CLI help:
-```bash
-# Browse available top-level commands
-rei --help
-
-# Get details on a specific command
-rei <command> --help
-```
-
-For more detailed CLI documentation:
-```bash
-ls /Users/shinzui/Keikaku/bokuno/rei-project/rei/docs/user/cli/
-```
-
-#### For Agents
-
-Ask about the domain knowledge:
-
-```
-Question: "What key concepts, rules, or patterns should this agent know about?"
-Header: "Knowledge"
-Options:
-- Let me describe the domain
-- Point me to relevant files/docs to read
-```
-
-If the user points to files, read them and extract:
-- Core concepts and terminology
-- Key business rules or constraints
-- Important file locations
-- Common patterns and idioms
-- Cross-module interactions
-
-If the agent relates to a rei module, check for existing documentation and CLI help:
-```bash
-# Module documentation in the rei repo (for domain context)
-ls /Users/shinzui/Keikaku/bokuno/rei-project/rei/docs/dev/modules/
-
-# CLI help for the relevant command
-rei <command> --help
-```
-
-### Phase 5: Generate the File
-
-#### Generating a Skill
-
-Create `skills/<name>/SKILL.md` following this structure:
-
-```markdown
----
-name: <name>
-description: <description from Phase 3>
-allowed-tools: <tools from Phase 3>
----
-
-# <Title (human-readable form of the name)>
-
-<One paragraph describing what this skill does and when to use it.>
-
-## When to Use
-
-Activate when the user says things like:
-- "<phrase 1>"
-- "<phrase 2>"
-- "<phrase 3>"
-- "<phrase 4>"
-
-## Key Concepts
-
-<If the skill involves domain concepts, define them here. Otherwise omit this section.>
-
-### <Concept 1>
-
-<Brief explanation.>
-
-## Workflow Overview
-
-1. **<Phase 1 name>** - <what happens>
-2. **<Phase 2 name>** - <what happens>
-...
-
-## Instructions for Claude
-
-### Phase 1: <Name>
-
-<Detailed instructions including AskUserQuestion prompts, CLI commands, and decision logic.>
-
-Use AskUserQuestion for interactive steps:
-
-\```
-Question: "<question text>"
-Header: "<short label>"
-Options:
-- <option 1>
-- <option 2>
-\```
-
-<CLI commands to run:>
-
-\```bash
-rei <command> --actor claude-code
-\```
-
-### Phase 2: <Name>
-
-<Continue for each phase.>
-
-## Output Format
-
-After completing the workflow, provide a summary:
-
-\```
-## <Result Title>
-
-- **<Field 1>**: [value]
-- **<Field 2>**: [value]
-
-### Next Steps
-
-1. <step 1>
-2. <step 2>
-\```
-
-## Important Notes
-
-- Always include `--actor claude-code` when creating entities via rei CLI
-- <Other important notes specific to this skill>
-```
-
-**Important conventions to follow:**
-- Use `AskUserQuestion` blocks exactly as shown (Question, Header, Options format)
-- Include `--actor claude-code` on all `rei` entity-creation commands
-- Show CLI commands in fenced bash code blocks
-- Keep the workflow actionable — tell Claude exactly what to do, don't just describe
-- Add "(Recommended)" suffix to the best default option in AskUserQuestion prompts
-- If the user provided enough info upfront, note that questions can be skipped
-
-Write the file:
-```bash
-# Working directory: rei-kit repo root
-```
-
-Create `skills/<name>/SKILL.md` using the Write tool.
-
-#### Generating an Agent
-
-Create `agents/<name>.md` following this structure:
-
-```markdown
----
-name: <name>
-description: <description from Phase 3, include "Use for..." guidance>
-tools: <tools from Phase 3>
-model: sonnet
----
-
-# <Title (human-readable form of the name)>
-
-You are an expert on <domain>. <Brief description of role and scope.>
-
-<If there are reference docs:>
-**Full documentation:** `<path>` - Always read this first for complete domain details.
-
-## Quick Reference
-
-### Core Concepts
-
-- **<Concept 1>**: <Brief description>
-- **<Concept 2>**: <Brief description>
-
-### Key Business Rules
-
-1. <Rule 1>
-2. <Rule 2>
-
-<For domain experts, add:>
-
-### Subscriptions
-
-| Subscription | Category | Purpose |
-|--------------|----------|---------|
-| ... | ... | ... |
-
-### File Locations
-
-\```
-<path>/
-├── <dir>/          # <purpose>
-├── <dir>/          # <purpose>
-└── <file>          # <purpose>
-\```
-
-## Key Patterns
-
-1. **<Pattern 1>**: <Description>
-2. **<Pattern 2>**: <Description>
-
-<For guides, replace Key Patterns with:>
-
-## Conversation Flow
-
-When helping users:
-
-1. **<Step 1>**: <what to do>
-2. **<Step 2>**: <what to do>
-
-## Example Interactions
-
-**User**: "<example question>"
-
-**Response**: <example answer>
-
-## Output Format
-
-When helping with <domain>:
-
-\```
-## <Domain> Analysis: <Topic>
-
-### Current Behavior
-(Read the docs and relevant code first)
-
-### Recommendation
-Clear recommendation for the change.
-
-### Implementation
-Code changes with context.
-
-### Testing
-- Tests to add/modify
-\```
-
-## Before Answering
-
-1. Read <primary documentation path> for full domain context
-2. Check relevant source files in <source path>
-3. Reference existing patterns in the codebase
-```
-
-**Important conventions to follow:**
-- Always include `model: sonnet` in frontmatter
-- Agents are read-only — never include Write or Edit in tools
-- Domain experts should point to full docs rather than duplicating them
-- Include file location trees so the agent knows where to look
-- Guides should include example interactions
-- Use tables for quick-reference data (states, subscriptions, rules)
-
-Write the file using the Write tool.
-
-### Phase 6: Register in kit.json
-
-Read the current `kit.json`:
-
-```bash
-# Read current manifest
-```
-
-Use the Read tool to read `kit.json`.
-
-**For skills**, add an entry to the `skills` array:
+Deeper references live in the rei repo (`mori registry show shinzui/rei --full` for its path):
+`docs/user/concepts.md`, `docs/user/cli/<command>.md`, and `docs/user/CHANGELOG.md` — skim the
+recent changelog entries for the areas the item touches, since features land faster than
+existing skills are updated. Where it is safe, run read-only commands (`rei <x> list --json`)
+to see real output shapes before writing `jq` against them.
+
+**Newer surfaces worth checking** before designing around older patterns:
+
+| Need | Use | Instead of |
+|------|-----|------------|
+| What an entity is about | `rei topic associate/associations/entities` (validated `about`, `scoped-to`, `instance-of`) | ad-hoc edges or tags |
+| Canonical identity / dedup of a subject | `rei topic add-ref` / `ref-show` | label matching alone |
+| Which software project something belongs to | `rei project` (typed topics, `scope`, `sync` from Mori) | the deprecated `local-repo` property |
+| Category-driven defaults | `rei category show` (property bindings, auto-set if missing) and `print-note-guidance` | setting those properties by hand |
+| Multi-value / historical properties | `append-property` / `remove-property-value`, `set-property --at` | re-setting whole values, backdating by hand |
+| Portfolio reads | `rei view exec --json`, `view exec-batch`, `rei dependency graph --json` | looping `show` calls |
+
+**Is a kit item the right vehicle?** A fixed, judgment-free procedure is better as a
+`rei playbook`; recurring or event-triggered work is an agent schedule (`rei help
+agent-schedules`), which can invoke a skill; delegated work that needs review should record
+checkpoints (`rei help review-checkpoints`). A kit skill is for workflows that need judgment.
+Say so if the request fits another vehicle better.
+
+### 3. Write
+
+Match the structure of the sibling you read. Skills typically have: frontmatter, a short
+intro (incl. contrast with siblings), **When to Use**, **Key Concepts** (only domain facts the
+model can't infer), numbered **phases** with exact commands, an **Output Format** summary, and
+**Important Notes** for the invariants that matter most.
+
+Write instructions, not a tutorial: concrete commands, decision rules, and failure handling.
+Leave out anything a capable model does by default (how to ask a question, generic advice,
+restating the tool list). Mark genuinely unknown domain details `<TODO: ...>` rather than
+inventing them.
+
+Rei conventions to apply when relevant:
+
+- **Actor**: use the global form `rei --actor claude-code <command> ...` on anything that
+  creates or changes entities — it works on every command.
+- **Non-interactive**: always pass IDs explicitly (`-i INTENTION_ID`, `-n NOTE_ID`, ...);
+  omitted IDs open fzf pickers that hang an agent run. Use `--json` + `jq` for reading state.
+- **Reuse before create**: search for existing intentions, links (canonical-URL dedup), topics
+  (`rei topic ref-show URL`), tags, and predicates before creating new ones.
+- **Knowledge modeling**: subjects are topics (`rei topic associate ... --relation about`),
+  tags are facets; `instance-of` for named things vs `broader-than` between concepts; seed with
+  `rei ontology seed-system` and finish with `rei ontology validate`. Defer to
+  `rei-bookmark-url` / `rei-curate-ontology` for the full discipline.
+- **Custom properties**: values must come from the definition (`rei custom-property show KEY`);
+  respect `scopedToCategories`; don't set what a category binding already sets.
+- **Don't trust exit status alone**: only some commands follow the automation exit contract
+  (`docs/user/cli/automation-exit-contract.md` — e.g. topic associations, note writes: `2`
+  refused/invalid, `70` store failure). Many legacy handlers print an error and exit `0`, so
+  verify writes by reading back (`show --json`) before anything irreversible.
+- **Safety**: one confirmation gate before bulk writes or anything destructive; verify what
+  was written before deleting sources; never loosen existing predicates or restructure the
+  ontology as a side effect.
+- **Cross-repo references** use `mori://` URIs.
+
+Agent specifics: `tools:` should be read-oriented (no Write/Edit); `model: sonnet` is the
+current default (see `agents/rei-custom-property-guide.md`). Point to docs and `rei help`
+topics instead of duplicating them, and keep quick-reference tables short.
+
+### 4. Register
+
+Add an entry to the matching array in `kit.json`:
 
 ```json
 {
   "name": "<name>",
-  "description": "<description>",
+  "description": "<same as frontmatter description>",
+  "version": "1.0.0",
   "path": "skills/<name>",
   "files": ["SKILL.md"]
 }
 ```
 
-**For agents**, add an entry to the `agents` array:
+Agents use `"path": "agents"` and `"files": ["<name>.md"]`. Validate:
 
-```json
-{
-  "name": "<name>",
-  "description": "<description>",
-  "path": "agents",
-  "files": ["<name>.md"]
-}
+```bash
+jq -e '.skills, .agents' kit.json > /dev/null && echo valid
 ```
 
-Use the Edit tool to insert the new entry into the appropriate array in `kit.json`. Ensure
-the resulting JSON is valid.
+### 5. Report
 
-### Phase 7: Summary
-
-After creating the file and updating kit.json, show a summary.
-
-**For skills:**
-
-```
-## Skill Scaffolded: <name>
-
-### Files Created
-- `skills/<name>/SKILL.md`
-
-### Files Modified
-- `kit.json` (added skill entry)
-
-### Skill Summary
-- **Name**: <name>
-- **Description**: <description>
-- **Allowed Tools**: <tools>
-- **Workflow Phases**: <count> phases
-
-### Next Steps
-1. Review the generated SKILL.md and refine the workflow details
-2. Test the skill by invoking `/<name>`
-3. Commit when satisfied: `git add skills/<name>/ kit.json`
-```
-
-**For agents:**
-
-```
-## Agent Scaffolded: <name>
-
-### Files Created
-- `agents/<name>.md`
-
-### Files Modified
-- `kit.json` (added agent entry)
-
-### Agent Summary
-- **Name**: <name>
-- **Description**: <description>
-- **Tools**: <tools>
-- **Model**: sonnet
-- **Type**: <expert / guide / pattern expert>
-
-### Next Steps
-1. Review the generated agent file and refine the domain knowledge
-2. Add more quick-reference data as you learn the domain
-3. Commit when satisfied: `git add agents/<name>.md kit.json`
-```
-
-## Important Notes
-
-- **Reference before generating**: Always read 1-2 existing examples from this repo (rei-kit)
-  before writing. This ensures the output matches established conventions. Use the rei CLI
-  help (`rei <command> --help`) for domain context, not for structural format.
-- **Don't over-specify**: Generate a solid skeleton that the user can refine. Don't invent
-  domain details you're unsure about — mark those spots with `<TODO: ...>` placeholders.
-- **Respect the separation**: All generated files go in rei-kit, never in the rei repo.
-- **Naming matters**: Follow the `rei-` prefix convention. Use `-expert` or `-guide` suffix
-  for agents.
-- **kit.json must stay valid**: After editing, the JSON must parse correctly. Read before
-  editing to understand the current structure.
-- **Skill content should be actionable**: Skills tell Claude exactly what to do — specific
-  questions to ask, specific commands to run. Don't write vague instructions.
-- **Agent content should be reference-oriented**: Agents provide quick-lookup knowledge.
-  Point to full docs, don't duplicate them.
-- **If the user provides all details upfront**, skip the interactive questions and generate
-  directly. Mention which questions were skipped in the summary.
+Summarize the files created/modified, the rei commands the item relies on (and that each was
+checked against `--help`), any `<TODO>`s left, and how to try it — for local testing, symlink
+it into `.claude/skills/` as this skill is; installed users get it via `rei kit update` after
+it is pushed. Suggest a Conventional Commit such as `feat: add <name> skill`; don't commit
+unless asked.
