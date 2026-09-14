@@ -80,8 +80,8 @@
     },
     {
       "name": "rei-bookmark-url",
-      "description": "Bookmark a URL into Rei and grow the ontology to hold it — work out every subject the page covers, reuse the topics that already cover them, create properly-wired topics for the ones that don't (instance-of their type, placed under a parent concept, with a canonical external reference), define any missing predicate from the Schema.org vocabulary, anchor the link to its primary topic, and assert `about` associations for the rest",
-      "version": "1.0.0",
+      "description": "Bookmark a URL into Rei and grow the ontology to hold it — work out every subject the page covers, reuse the topics that already cover them (checked by key, label, and canonical reference), create properly-wired topics for the ones that don't (instance-of their type or broader-than from a parent, with a canonical external reference), name any missing predicate from Schema.org, anchor the link to its primary topic, assert `about` associations for the rest, and verify the result",
+      "version": "1.1.0",
       "path": "skills/rei-bookmark-url",
       "files": ["SKILL.md"]
     },
