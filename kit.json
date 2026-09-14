@@ -59,8 +59,8 @@
     },
     {
       "name": "rei-ingest-markdown",
-      "description": "Ingest a pre-converted markdown file (with frontmatter) into Rei — reuse or create a link from the source URL, save the full markdown as an archive note, summarize it into a separate summary note, wire them with `archives` and `summarizes` edges, and classify the link with author-type, content-type, media, platform, and reused/new topical tags",
-      "version": "1.0.0",
+      "description": "Ingest a pre-converted markdown file (with frontmatter) into Rei — reuse or create a link from the source URL, store the full markdown verbatim as an archive note, summarize it into a separate summary note, wire them with `archives` and `summarizes` edges, classify the link with author-type, content-type, media, and platform, tag it with reused/new facet tags, associate the link and summary note `about` the existing topics they cover, and verify everything by reading it back",
+      "version": "2.0.0",
       "path": "skills/rei-ingest-markdown",
       "files": ["SKILL.md"]
     },
