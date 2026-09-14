@@ -1,336 +1,177 @@
 ---
 name: rei-ingest-url
-description: Ingest a single URL into Rei — create (or reuse) a link, summarize the content as a note, connect them with a "summarizes" edge, and classify the link with author-type, content-type, media, platform, and tags properties.
+description: Ingest a single URL into Rei — reuse or create a link anchored to an intention, summarize the content into a note, connect them with a `summarizes` edge, classify the link with author-type, content-type, media, and platform, tag it with reused/new facet tags, and associate the link and note `about` the existing topics they cover.
 allowed-tools: AskUserQuestion, Bash, Read, WebFetch
 ---
 
 # Rei Ingest URL
 
-This skill ingests a single URL into Rei. It first checks whether a link already exists for
-that URL; if not, it asks for an intention ID and creates the link. It then fetches the
-URL's content, summarizes it into a new note attached to the same intention, and connects
-the note to the link with a `summarizes` edge. Finally, it classifies the link with the
-`author-type`, `content-type`, `media`, and `platform` enum properties and applies
-free-form topical `tags` — reusing existing tags from the workspace wherever possible to
-avoid near-duplicate vocabulary.
+Ingests one URL into Rei: a link anchored to an intention, a summary note on the same
+intention, a `note -[summarizes]-> link` edge, enum classification of the link, facet `tags`,
+and `about` associations to the topics that already exist for the page's subjects.
 
-## When to Use
-
-Activate when the user says things like:
-- "Ingest this URL into Rei"
-- "Summarize this link and add it to Rei"
-- "Add <url> as a link with a summary"
-- "/rei-ingest-url <url>"
+Use `/rei-bookmark-url` instead when the link should be filed under a topic and the ontology
+grown to hold it (it creates topics; this skill only reuses them). Use
+`/rei-note-from-url-markdown` or `/rei-ingest-markdown` when a markdown snapshot of the page
+already exists. `/rei-ingest-url-collection` runs this skill per URL and refers to its phase
+numbers — keep Phases 1–9 and steps 9a–9e stable.
 
 ## Key Concepts
 
-- **Link** — a Rei entity representing a URL, anchored to an intention (or action/outcome/reflection).
-- **Note** — a Rei entity holding markdown content, anchored to an intention.
-- **Edge** — a typed relationship between two entities, identified by a predicate.
-- **`summarizes` predicate** — used here to point from the summary note to the link it summarizes.
-- **Custom properties on links** — `author-type`, `content-type`, `media`, `platform` are
-  enum properties defined globally for links. Only values from the enum may be used.
-- **`tags` property** — a `tag-set` property scoped to links (and other entities). Free-form,
-  no predeclared values; assignments are a comma-separated list passed in a single
-  `set-property` call. Setting replaces the full set, so include every desired tag in one
-  call. Tags should be short, lowercase, hyphen-separated (e.g., `event-sourcing`, not
-  `Event Sourcing` or `events`).
+- **Link dedup** — Rei canonicalizes URLs, and `rei link add` on a known URL reuses the link
+  and just adds an attachment. Still check first, so a re-ingest doesn't create a second
+  summary note.
+- **Enum classifiers** — `author-type`, `content-type`, `media`, `platform` are link-only enum
+  properties; only defined values are valid (`rei custom-property show KEY --json` →
+  `.valueType.data.enumValues`).
+- **Tags vs topics** — `tags` is a `tag-set` of lightweight facets for filtering. Real subjects
+  belong in topics, recorded with `rei topic associate TOPIC ENTITY --relation about`. This
+  skill associates with existing topics only; subjects with no topic are reported, with a
+  pointer to `/rei-bookmark-url` (which follows the full modeling discipline).
+- **Exit status** — `link`, `edge`, and `custom-property` writes may print an error and still
+  exit `0`. Capture IDs from output and verify by reading back (step 9e).
 
-## Workflow Overview
+## Instructions
 
-1. **Get the URL** — from args or from the user
-2. **Check for existing link** — search by URL; if found, reuse it; otherwise proceed
-3. **Get intention ID** — ask the user (only when creating a new link)
-4. **Create the link** — `rei link add`
-5. **Fetch and summarize** — pull URL content, summarize it
-6. **Create the summary note** — attached to the same intention
-7. **Create the edge** — `note -[summarizes]-> link`
-8. **Classify the link** — set `author-type`, `content-type`, `media`, `platform`
-9. **Tag the link** — harvest existing tags, pick + propose new ones, set `tags`
-10. **Summary** — show everything that was created
-
-## Instructions for Claude
+Use the global actor form `rei --actor claude-code …` for every write, and always pass IDs
+explicitly (`-i`, `-l`, `-n`, full entity IDs) — omitted IDs open fzf pickers that hang.
 
 ### Phase 1: Get the URL
 
-The URL may be supplied as an argument. If not, ask:
+From the argument, or ask. It must be an absolute `http(s)://` URL; otherwise stop.
 
-```
-Question: "What URL should I ingest into Rei?"
-Header: "URL"
-Options:
-- Let me paste the URL
-```
-
-Validate that it is a well-formed absolute URL (`http://` or `https://`). If not, stop and
-tell the user.
-
-### Phase 2: Check Whether a Link Already Exists
-
-Extract the registrable domain from the URL (e.g., `example.com`) and search for an
-existing link:
+### Phase 2: Check for an Existing Link
 
 ```bash
-rei link list --all --domain DOMAIN --json | jq -r --arg url "URL" '.[] | select(.url == $url)'
+rei link list --all --domain DOMAIN --json \
+  | jq -r --arg url "URL" '.[] | select(.original_url == $url or .canonical_url == $url) | .id'
 ```
 
-If `jq` is unavailable, fall back to:
+`DOMAIN` is the registrable domain (`github.com`). If nothing matches, also try
+`rei link list --all --query "URL" --json` (the stored URL may be canonicalized differently).
 
-```bash
-rei link list --all --query "URL" --json
-```
+If a link exists: capture `LINK_ID` and inspect it with `rei link show LINK_ID` (the text view
+lists attachments and custom properties; `--json` omits properties). Reuse an intention it is
+attached to, skip Phases 3–4, don't overwrite enum properties it already has, and check
+`rei edge show LINK_ID --json` for an existing incoming `summarizes` edge — if one exists,
+don't create another summary note unless the user asks.
 
-and scan the output for an exact URL match.
+### Phase 3: Get the Intention ID (new links only)
 
-- **If a matching link exists**: capture its ID and any anchor intention ID from the output,
-  inform the user, and **skip Phase 3 and Phase 4**. Also skip property-setting (Phase 8)
-  for enum keys that are already set on the existing link — check with
-  `rei link show LINK_ID --json` first.
-- **If no match**: proceed to Phase 3.
-
-### Phase 3: Get Intention ID (only for new links)
-
-Use AskUserQuestion:
-
-```
-Question: "Which intention should the link and summary note be attached to? Provide the intention ID (e.g., intention_01h455vb4pex)."
-Header: "Intention"
-Options:
-- Let me type the intention ID
-- Let me browse intentions first
-```
-
-If the user wants to browse, run:
-
-```bash
-rei intention list
-```
-
-Then ask again for the ID.
+Ask for the intention to anchor the link and note to. If the user wants to browse, search with
+`rei intention list --all -s "KEYWORD" --json` and offer the top matches.
 
 ### Phase 4: Create the Link
 
 ```bash
-rei link add "URL" -i INTENTION_ID --actor claude-code
+rei --actor claude-code link add "URL" -i INTENTION_ID -t "TITLE"
 ```
 
-If the page's `<title>` is known (e.g., from a prior fetch), pass it with `-t "TITLE"`.
-Otherwise, set the title after Phase 5 once you have it:
+Omit `-t` if the title isn't known yet and set it after Phase 5 with
+`rei --actor claude-code link title LINK_ID -t "TITLE"`. Capture `LINK_ID` (`link_…`).
 
-```bash
-rei link title LINK_ID "TITLE"
-```
+### Phase 5: Fetch and Summarize
 
-Capture the new link ID from the command output.
+Fetch with WebFetch, asking for the title, author, a thorough markdown summary (key points,
+arguments, notable quotes/data), and hints for author type, content type, media, and platform.
+Extract `TITLE`, `SUMMARY_MD`, the classification hints, and the 1–5 central `SUBJECTS`.
 
-### Phase 5: Fetch and Summarize the URL
-
-Fetch the URL's content using the WebFetch tool with a prompt like:
-
-> "Extract the page title, author (if any), and the main content. Return a concise but
-> thorough summary of the article/page in markdown, preserving the author's key points,
-> arguments, and any notable quotes or data. Also report: what type of author this is
-> (individual/company/organization/etc.), what type of content this is
-> (article/blog_post/documentation/etc.), the primary media format, and the platform/site."
-
-From the response, extract:
-- `TITLE` — the page's title
-- `SUMMARY_MD` — the markdown summary body
-- Classification hints for `author-type`, `content-type`, `media`, `platform`
-
-If the fetch fails, stop and report the error. The link has already been created at this
-point; leave it in place and let the user retry.
+If the fetch fails, stop and report it; a link created in Phase 4 stays in place for a retry.
 
 ### Phase 6: Create the Summary Note
 
-Write the summary to a temp file with a title header, then pipe it into `rei note new`:
-
 ```bash
-(echo '# Summary of "TITLE"'; echo ''; echo 'Source: URL'; echo ''; echo "$SUMMARY_MD") \
-  | rei note new -i INTENTION_ID --stdin --actor claude-code
+printf '# Summary of "%s"\n\nSource: %s\n\n%s\n' "TITLE" "URL" "$SUMMARY_MD" \
+  | rei --actor claude-code note new -i INTENTION_ID --stdin
 ```
 
-Capture the note ID from the output.
+Capture `NOTE_ID` (`note_…`). `note new` follows the exit contract: `2` = refused/invalid,
+`70` = store failure.
 
-### Phase 7: Create the Edge (note summarizes link)
-
-```bash
-rei edge add --from NOTE_ID --to LINK_ID --predicate summarizes
-```
-
-If this fails because the `summarizes` predicate doesn't exist, define it and retry:
+### Phase 7: Create the Edge
 
 ```bash
-rei predicate show summarizes >/dev/null 2>&1 || \
-  rei predicate define summarizes --label "Summarizes" --source-types note --target-types link,note
+rei predicate list --json | jq -e '.[] | select(.predicateKey == "summarizes")' >/dev/null || \
+  rei --actor claude-code predicate define summarizes --label "Summarizes" \
+    --source-types note --target-types link,note,topic
+rei --actor claude-code edge add --from NOTE_ID --to LINK_ID --predicate summarizes
 ```
+
+`summarizes` is not part of `rei ontology seed-system`. Never redefine or loosen an existing
+predicate.
 
 ### Phase 8: Classify the Link
 
-For each of the four enum properties, pick the best-fitting value **from the allowed list**
-based on the fetched content. Only set a property if you are reasonably confident — skip it
-otherwise rather than guessing.
-
-**Allowed values (authoritative reference — verify at runtime with `rei custom-property show KEY` if unsure):**
-
-- `author-type`: `individual`, `company`, `organization`, `research_group`, `community`,
-  `anonymous`, `government`, `media_outlet`, `mixed`
-- `content-type`: `homepage`, `page`, `article`, `blog_post`, `essay`, `documentation`,
-  `api_reference`, `tutorial`, `guide`, `research_paper`, `whitepaper`, `case_study`,
-  `announcement`, `changelog`, `repository`, `repository_issue`, `repository_pr`,
-  `repository_release`, `package`, `social_post`, `thread`, `discussion`, `qa_question`,
-  `qa_answer`, `video`, `podcast`, `image`, `presentation`, `pdf`, `dataset`, `course`
-- `media`: `text`, `video`, `audio`, `image`, `slides`, `interactive`, `dataset`, `mixed`
-- `platform`: `website`, `blog`, `x`, `linkedin`, `reddit`, `hackernews`, `github`,
-  `gitlab`, `bitbucket`, `youtube`, `vimeo`, `substack`, `medium`, `notion`, `wikipedia`,
-  `arxiv`, `stack_overflow`, `lobsters`, `newsletter`, `docs_site`, `package_registry`,
-  `podcast_platform`, `chatgpt`, `claude`
-
-Set each property:
+Set each of `author-type`, `content-type`, `media`, `platform` only when a defined value clearly
+fits; skip rather than guess. Read the allowed values at runtime:
 
 ```bash
-rei link set-property -l LINK_ID author-type VALUE
-rei link set-property -l LINK_ID content-type VALUE
-rei link set-property -l LINK_ID media VALUE
-rei link set-property -l LINK_ID platform VALUE
+rei custom-property show KEY --json | jq -r '.valueType.data.enumValues[]'
+rei --actor claude-code link set-property -l LINK_ID KEY VALUE
 ```
 
-If any `set-property` call fails because the value is not in the enum, re-read the allowed
-values with `rei custom-property show KEY` and retry with a valid one. If no valid value
-fits, skip that property.
+### Phase 9: Tag and Associate Topics
 
-### Phase 9: Tag the Link
-
-Goal: assign 3–7 topical `tags` that categorize what the content is *about* (subject
-matter, technologies, concepts, domains). Tags are orthogonal to the enum classifiers from
-Phase 8 — `content-type: article` says *what shape* it is; `tags: event-sourcing,haskell`
-says *what it's about*.
-
-**Step 9a — Harvest existing tag vocabulary.** Before proposing tags, pull the current set
-of tags already in use across the workspace so you can reuse them instead of minting
-near-duplicates:
-
-```bash
-rei custom-property entities tags --json
-```
-
-The output is an object of the shape:
-
-```json
-{
-  "count": <int>,
-  "entities": [ { ..., "properties": { "tags": "tag-one,tag-two,..." } }, ... ],
-  "property": "tags",
-  "value_type": "tag-set"
-}
-```
-
-If `count` is `0` (or `entities` is empty), the vocabulary is empty — proceed with
-freshly-minted tags. Otherwise extract every tag value across all entities into a single
-deduplicated list (the `EXISTING_TAGS` vocabulary). One-liner:
+**9a — Harvest vocabulary.**
 
 ```bash
 rei custom-property entities tags --json \
-  | jq -r '.entities[].properties.tags' \
-  | tr ',' '\n' \
-  | sed 's/^ *//; s/ *$//' \
-  | sort -u
+  | jq -r '.entities[].value' | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sort -u
+rei topic list --json | jq -r '.[] | "\(.topicKey)\t\(.topicLabel)"'
 ```
 
-Note: tags are stored as a single comma-separated string per entity (not a JSON array),
-which is why the `tr ','` split is needed.
+Tag values are one comma-separated string per entity. For named subjects with a homepage,
+`rei topic ref-show https://HOMEPAGE --json` finds a topic filed under another key.
 
-**Step 9b — Propose tags.** Based on the fetched content and the existing vocabulary,
-choose 3–7 tags that best describe the subject matter. Apply these rules in order:
+**9b — Propose.**
+- **Topics**: for each subject, the existing topic that genuinely covers it (match key, label,
+  or reference). Subjects with no topic go on an "uncovered" list — do not create topics here.
+- **Tags**: 3–7 facets. Reuse existing tags verbatim (watch plural, abbreviation, synonym, and
+  case variants); new tags are lowercase and hyphenated; never re-encode the enum classifiers
+  (`article`, `github`) as tags; keep them specific but not sentence-like.
 
-1. **Prefer reuse.** If an existing tag covers the concept, use it verbatim — do not create
-   a variant. Watch for near-duplicates:
-   - singular vs plural (`graph` vs `graphs`) — reuse whichever exists
-   - abbreviation vs expansion (`llm` vs `large-language-models`) — reuse whichever exists
-   - synonyms (`event-sourcing` vs `event-sourced`) — reuse whichever exists
-   - case / punctuation (`EventSourcing` vs `event-sourcing`) — reuse whichever exists
-2. **Normalize new tags.** When no existing tag fits, mint a new one in lowercase,
-   hyphen-separated, singular-where-natural (e.g., `event-sourcing`, `haskell`,
-   `distributed-systems`, `claude-code`). No spaces, no underscores, no punctuation beyond
-   hyphens.
-3. **Stay topical.** Tags should describe the subject matter, not the format. Don't
-   re-encode `content-type` / `media` / `platform` as tags (no `article`, `video`,
-   `github`).
-4. **Be specific but not narrow.** Prefer `event-sourcing` over both `programming` (too
-   broad) and `event-sourcing-in-haskell-with-postgres` (too narrow — that's a sentence).
-5. **Cap at ~7.** More than 7 tags dilutes the signal; aim for 3–5 when in doubt.
+**9c — Confirm.** Show tags (marked reused/new) and topic associations, and ask to apply as
+proposed, edit, or skip. Re-check edits against the vocabulary for near-duplicates.
 
-**Step 9c — Confirm with the user.** Show the proposed tags, clearly marking which are
-reused from the existing vocabulary and which would be newly minted, then ask:
-
-```
-Question: "I propose these tags for the link. Apply them?"
-Header: "Tags"
-Options:
-- Apply as proposed (Recommended)
-- Let me edit the list
-- Skip tagging
-```
-
-If the user picks "Let me edit the list", accept their revised comma-separated list and
-re-validate against the normalization rules (lowercase, hyphenated, no duplicates). Also
-re-check the edited list against `EXISTING_TAGS` for near-duplicates and surface any you
-notice before applying.
-
-**Step 9d — Apply the tags.** Tags are a `tag-set`, so pass them as a single comma-separated
-value in one call:
+**9d — Apply.**
 
 ```bash
-rei link set-property -l LINK_ID tags "tag-one,tag-two,tag-three"
+# new link: one call with the full set (set-property replaces the set)
+rei --actor claude-code link set-property -l LINK_ID tags "tag-one,tag-two,tag-three"
+# reused link that already has tags: append, one shell argument per tag
+rei --actor claude-code link append-property -l LINK_ID tags tag-one tag-two
+
+rei --actor claude-code topic associate TOPIC_KEY LINK_ID --relation about
+rei --actor claude-code topic associate TOPIC_KEY NOTE_ID --relation about
 ```
 
-Setting replaces the full set. If the link already had tags (reused-link case from Phase 2),
-merge the new tags with the existing ones before calling `set-property`, deduplicating.
+**9e — Verify.**
+
+```bash
+rei link show LINK_ID                                   # attachments, properties, tags
+rei edge show NOTE_ID --predicate summarizes --json     # targetId == LINK_ID
+rei topic associations LINK_ID --relation about --json
+```
+
+Retry a missing write once; otherwise report it as failed.
 
 ### Phase 10: Summary
-
-Display a final summary:
 
 ```
 ## URL Ingested
 
 - **URL**: <url>
-- **Link**: <link_id>  (reused existing / newly created)
+- **Link**: <link_id>  (reused / new)
 - **Intention**: <intention_id>
 - **Note**: <note_id>
 - **Edge**: <edge_id>  (note -[summarizes]-> link)
 
 ### Classification
-- author-type: <value or "skipped">
-- content-type: <value or "skipped">
-- media: <value or "skipped">
-- platform: <value or "skipped">
+- author-type / content-type / media / platform: <values or "skipped">
 - tags: <tag-one, tag-two, ...>  (N reused, M new)
+- about: <topic-key, ...>
+- uncovered subjects: <subject, ...> — file with `/rei-bookmark-url` to grow the ontology
 
-### Next Steps
-- Review the summary note: `rei note show <note_id>`
-- Inspect the link: `rei link show <link_id>`
+### Failed / Skipped
+- <item — reason>  (or: nothing)
 ```
-
-## Important Notes
-
-- Always use `--actor claude-code` when creating entities (link, note).
-- **Check before creating**: `rei link list --all --domain DOMAIN --json` is the cheapest
-  way to detect an existing link; fall back to `--query URL` if needed.
-- **Don't re-ingest**: if a link already exists, do not create a second link, and do not
-  create a duplicate summary note unless the user explicitly asks for one.
-- **Property values must come from the enum** — never invent new values. If unsure, run
-  `rei custom-property show KEY` to list them.
-- **Skip classification rather than guess**: a skipped property is better than a wrong one.
-- **Tags are a `tag-set`**: pass all desired tags as one comma-separated value in a single
-  `rei link set-property … tags "a,b,c"` call — `set-property` replaces the full set, so
-  splitting it across calls would lose earlier tags. When re-tagging an existing link,
-  read current tags first (`rei link show LINK_ID --json`) and merge before setting.
-- **Reuse tags aggressively**: always run `rei custom-property entities tags --json` first
-  and prefer existing tag strings verbatim over near-duplicates. A fragmented vocabulary
-  (`llm` and `llms` and `large-language-models` all coexisting) is the main failure mode
-  to avoid.
-- If the `summarizes` predicate is missing, define it once with
-  `--source-types note --target-types link,note`.
-- The link is created *before* the fetch; if fetching/summarizing fails, the link remains —
-  report the error and let the user retry Phases 5–8 manually.

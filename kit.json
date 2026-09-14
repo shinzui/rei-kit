@@ -31,8 +31,8 @@
     },
     {
       "name": "rei-ingest-url",
-      "description": "Ingest a single URL into Rei — reuse or create a link, summarize the content into a note, connect them with a summarizes edge, and classify the link with author-type, content-type, media, platform, and reused/new topical tags",
-      "version": "1.0.0",
+      "description": "Ingest a single URL into Rei — reuse or create a link anchored to an intention, summarize the content into a note, connect them with a `summarizes` edge, classify the link with author-type, content-type, media, and platform, tag it with reused/new facet tags, and associate the link and note `about` the existing topics they cover",
+      "version": "1.1.0",
       "path": "skills/rei-ingest-url",
       "files": ["SKILL.md"]
     },
