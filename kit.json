@@ -73,8 +73,8 @@
     },
     {
       "name": "rei-curate-ontology",
-      "description": "Build and maintain a Rei knowledge ontology — topics, predicates, and edges — scoped tightly to the user's actual use cases. Investigates what exists, reuses it, creates only what's missing, and deliberately refuses to model the whole world",
-      "version": "1.1.0",
+      "description": "Build and maintain a Rei knowledge ontology — topics, predicates, associations, and edges — scoped tightly to the user's actual use cases. Surveys what exists, reuses it, creates only what's missing (classifying instances with instance-of, placing concepts with broader-than, naming new predicates from Schema.org), connects existing links and notes, proposes pruning and is-a → instance-of cleanup, and deliberately refuses to model the whole world",
+      "version": "2.0.0",
       "path": "skills/rei-curate-ontology",
       "files": ["SKILL.md"]
     },
