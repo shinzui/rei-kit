@@ -52,8 +52,8 @@
     },
     {
       "name": "rei-complete-from-commits",
-      "description": "Backlog cleanup — for a given Rei intention and git repository, find commits whose Intention: trailer matches the intention's children and bulk-complete each with --at set to the latest matching commit timestamp; optionally infer dates for children with no trailer matches from pre-trailer commit subjects",
-      "version": "1.0.0",
+      "description": "Backlog cleanup — for a parent Rei intention and one or more git repositories, match open child intentions to commits by their `Intention:` trailers and bulk-complete each with `--at` set to the latest matching commit's author timestamp; optionally infer dates for children with no trailer matches from pre-trailer commit subjects, then verify every completion by reading it back",
+      "version": "1.1.0",
       "path": "skills/rei-complete-from-commits",
       "files": ["SKILL.md"]
     },
