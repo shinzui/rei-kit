@@ -101,8 +101,8 @@
     },
     {
       "name": "rei-capture-session",
-      "description": "Capture a planning or design session in Rei at its end — identify the goal the user was pursuing (not the worked example that came up), reuse or create that goal intention, link examples and side work to it with support or dependency edges, record one action summarizing what the session produced, write a structured Question / Decided / Leaning / Produced / Open note, associate the note `about` every project topic the session touched (resolved by mori:// reference), and verify by reading back. Use at the end of an agent session that planned or designed something so the day's thinking is reviewable; use rei-note-from-tmp to file an arbitrary scratch note instead.",
-      "version": "1.0.0",
+      "description": "Capture a planning or design session in Rei at its end — identify the goal the user was pursuing (not the worked example that came up), reuse or create that goal intention, link examples and side work to it with support or dependency edges, record one action summarizing what the session produced, write a structured Question / Decided / Leaning / Produced / Open note, relate the note to each project topic the session involved by the role that project played (`about` for subject matter, `produced-in`, `consulted`, or `worked-example` edges otherwise; resolved by mori:// reference), and verify by reading back. Use at the end of an agent session that planned or designed something so the day's thinking is reviewable; use rei-note-from-tmp to file an arbitrary scratch note instead.",
+      "version": "1.1.0",
       "path": "skills/rei-capture-session",
       "files": ["SKILL.md"]
     }
