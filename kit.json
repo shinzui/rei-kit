@@ -105,6 +105,13 @@
       "version": "1.1.0",
       "path": "skills/rei-capture-session",
       "files": ["SKILL.md"]
+    },
+    {
+      "name": "rei-capture-ops-retrospective",
+      "description": "Capture the retrospective of a production or deployment session in Rei at its end — resolve the anchor intention from the session's `Intention:` commit trailers and MasterPlan/ExecPlan `intention:` frontmatter (asking only when they are missing or disagree), link other intentions with support or dependency edges, record one action summarizing the operational outcome, write a scrubbed retrospective note (Goal / UTC timeline / incidents / measurements / went well and badly / learnings / Decided vs Leaning / Open / evidence index) tagged ops-retrospective, relate it to each project by role (`about` for the service whose production behavior is the subject, `produced-in`, or `consulted` edges; resolved by mori:// reference), and verify by reading back. Use at the end of an agent session that released, rolled out, ran prod jobs, or fixed an incident; use rei-capture-session for a planning or design session instead.",
+      "version": "1.0.0",
+      "path": "skills/rei-capture-ops-retrospective",
+      "files": ["SKILL.md"]
     }
   ],
   "agents": [
