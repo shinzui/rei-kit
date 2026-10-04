@@ -1,6 +1,6 @@
 ---
 name: rei-attach-link-to-intention
-description: Attach a URL to an intention and record why it was attached — reuse or create the canonical link, connect link → intention with a purpose predicate (inspiration-for, reference-for, comparable-for, …) whose edge description holds the specific reason ("their pricing table"), wire the aspects that made it relevant to topics (`exemplifies` or `about`), classify the link, add a why-note that `references` the link when the reason is too long for one line, and show how to recall it later. Use when the user attaches a link to work in progress with a reason; use rei-ingest-url to summarize a page and rei-bookmark-url to file it under a topic.
+description: Attach a URL to an intention and record why it was attached — reuse or create the canonical link, connect link → intention with a purpose predicate (inspiration-for, reference-for, comparable-for, …) whose edge description holds the specific reason ("their pricing table"), wire the aspects that made it relevant to topics (`exemplifies` or `about`), classify the link, add a why-note that `references` the link when the reason is too long for one line or files come with it, attach optional files (screenshots, images, PDFs) with `rei doc attach` to the why-note or another entity the user names, and show how to recall it later. Use when the user attaches a link to work in progress with a reason; use rei-ingest-url to summarize a page and rei-bookmark-url to file it under a topic.
 allowed-tools: AskUserQuestion, Bash, Read, WebFetch
 ---
 
@@ -10,8 +10,9 @@ Attaches a URL to an intention **with its reason**, so that months later the use
 the link, or at the intention's links, and see why it is there: "UI inspiration for the landing
 page — I like their pricing table."
 
-Inputs: a URL, the user's note about it, and the intention. The note is the main input. The
-page is fetched only for a title and classification. It is not summarized.
+Inputs: a URL, the user's note about it, the intention, and optionally local files that go
+with it (a screenshot of the part they like, a saved image, a PDF). The note is the main input.
+The page is fetched only for a title and classification. It is not summarized.
 
 Use `rei-ingest-url` instead when the page should be **summarized** into a note. Use
 `rei-bookmark-url` to file a link under a **topic** as general reference and grow the ontology
@@ -43,7 +44,16 @@ repeat them.
 - **Why-note**: a note on the intention with a `references` edge to the link (`references`
   already exists with source `link,note` and target `link`). Write one only when the reason
   doesn't fit one line.
-- **Exit status**: `link`, `edge`, and `predicate` writes can print an error and still exit
+- **Attachments are docs.** `rei doc attach` anchors a file to an intention, action, outcome,
+  reflection, note, or topic, but **not to a link**. To keep a screenshot tied to the link and
+  its reason, attach it to the why-note, which `references` the link. Supplying files therefore
+  makes the why-note required. Attach to the intention, an action or outcome, or an aspect topic
+  only when the user asks for that.
+- **Always `--copy`.** Without it the doc records the file's current path, and screenshots in
+  `~/Desktop`, `~/Downloads`, or a temp dir get moved or deleted. `--copy` stores the file
+  under `workspace/docs/doc_<id>.<ext>`. `doc attach` has no title flag, so set the title with
+  `rei doc set-title` afterwards.
+- **Exit status**: `link`, `edge`, `predicate`, and `doc` writes can print an error and still exit
   `0`. Topic associations and `note new` follow the exit contract (`2` refused or invalid,
   `70` store failure). Verify by reading back (Phase 8).
 
@@ -89,6 +99,17 @@ Use `rei --actor claude-code …` on every write and always pass IDs explicitly.
   rei intention list --all -s "KEYWORD" --json | jq -r '.[] | "\(.id)\t\(.title)"'
   ```
 
+- **Attachments** (optional): local file paths the user gives, or files they mention, such as
+  "the screenshot I just took". Resolve each to an absolute path and check it exists. Don't go
+  searching the disk for an unnamed file. Ask for the path instead. A missing file is reported
+  under Failed / Skipped, and the rest of the run continues. For each file, note:
+  - **CAPTION**: what it shows, in the user's words when they gave any: `Pricing table, annual
+    toggle on`. Use Read to look at an image when the user gave no caption, and describe only
+    what is visible.
+  - **TARGET**: the why-note by default. Use another entity only when the user names it, for
+    example "put the screenshot on the onboarding action" (`-i INTENTION_ID -a ACTION_ID`) or
+    "file it under the pricing-table topic" (`--topic TOPIC_ID`).
+
 ### 2. Interpret the Note
 
 From the note, work out:
@@ -103,6 +124,7 @@ From the note, work out:
   (subject matter).
 - **NEEDS_NOTE**: true when the note has more than the one-line reason can hold, such as several
   distinct things liked, caveats ("but not their colors"), or how to adapt it to the intention.
+  Also true when any attachment targets the why-note.
 
 ### 3. Check the Link and Existing Reasons
 
@@ -126,6 +148,9 @@ rei edge show LINK_ID --json \
   after the user confirms.
 - An edge with a **different purpose**: add the new one too. A link can serve an intention in
   more than one way.
+- A **why-note** already `references` the link from this intention
+  (`rei edge show LINK_ID --predicate references --json`, then check the note's intention): when
+  the run only brings new files, attach them to that note instead of writing a second one.
 
 ### 4. Fetch Title and Classification
 
@@ -148,6 +173,7 @@ To:     <intention title> (<intention_id>)
 Why:    inspiration-for — "Pricing table — three tiers side by side, annual toggle"
 Aspects: pricing-table  exemplifies   REUSE / CREATE (instance-of ui-pattern)
 Note:   none / why-note (details below)
+Files:  pricing.png → why-note  "Pricing table, annual toggle on"
 Props:  content-type=homepage, platform=website
 ```
 
@@ -232,7 +258,25 @@ rei --actor claude-code topic associate TOPIC_KEY NOTE_ID --relation about   # p
 ```
 
 `NOTE_MD` is the user's note, lightly structured into what they like, caveats, and how it applies.
-Keep their wording. Don't add content of your own from the page.
+Keep their wording. Don't add content of your own from the page. When files are attached, end
+`NOTE_MD` with an `## Attachments` list of their captions. If the user gave only files and a
+one-line reason, the note is the reason plus that list.
+
+**Attachments**, for each file. Use the why-note's `NOTE_ID` unless the user named another
+target in Phase 1:
+
+```bash
+# skip a file already on the target (re-runs)
+rei doc list -n NOTE_ID --json \
+  | jq -r --arg h "$(shasum -a 256 "ABS_PATH" | cut -d' ' -f1)" '.docs[] | select(.contentHash == $h) | .docId'
+
+rei --actor claude-code doc attach -n NOTE_ID --copy "ABS_PATH"
+# other targets: -i INTENTION_ID | -i INTENTION_ID -a ACTION_ID | -i INTENTION_ID -o OUTCOME_ID | --topic TOPIC_ID
+rei --actor claude-code doc set-title DOC_ID "CAPTION"
+```
+
+Capture `DOC_ID` from the `Document attached: doc_…` line. Always pass the anchor flag
+explicitly, because a bare `doc attach FILE` opens the fzf picker.
 
 ### 8. Verify
 
@@ -241,6 +285,7 @@ rei link show LINK_ID                                  # intention attachment, t
 rei edge show LINK_ID                                  # purpose edge with "— REASON", exemplifies edges
 rei topic associations LINK_ID --relation about --json
 rei edge show NOTE_ID --predicate references --json    # if a why-note was written
+rei doc list -n NOTE_ID --json | jq -r '.docs[] | "\(.docId)\t\(.title)\t\(.relativePath)"'   # if files were attached
 rei ontology validate
 ```
 
@@ -261,6 +306,9 @@ rei edge show INTENTION_ID --json \
 rei edge list --predicate inspiration-for --json
 # every link saved for a given aspect
 rei topic edges pricing-table
+# screenshots and files saved with the reason, then open one
+rei doc list -n NOTE_ID
+rei doc open DOC_ID
 ```
 
 ## Output Format
@@ -276,6 +324,7 @@ rei topic edges pricing-table
 ### Context
 - Aspects: <topic> exemplifies (reused / created instance-of <type>), <topic> about
 - Why-note: <note_id> -[references]-> link  (or: not needed)
+- Attachments: <doc_id> "<caption>" → <note_id / intention_id / …>  (or: none; already attached)
 - Properties: content-type=<v>, platform=<v>  (or: already set / skipped)
 - Predicates defined: <key>  (or: none)
 
@@ -290,5 +339,7 @@ rei edge show <link_id>
 
 - The reason goes on the edge (per link and intention), never in a link property.
 - Record the user's reason, not your opinion of the page. Don't fetch-and-summarize.
+- Attach only the files the user supplied, always with `--copy`. Never attach a page screenshot
+  you captured yourself.
 - Don't create topics for generic aspects or for the site's owner. Don't restructure the
   ontology; point at `rei-curate-ontology` for existing problems.
