@@ -1,6 +1,6 @@
 ---
 name: rei-attach-link-to-intention
-description: Attach a URL to an intention and record why it was attached — reuse or create the canonical link, connect link → intention with a purpose predicate (inspiration-for, reference-for, comparable-for, …) whose edge description holds the specific reason ("their pricing table"), wire the aspects that made it relevant to topics (`exemplifies` or `about`), classify the link, add a why-note that `references` the link when the reason is too long for one line or files come with it, attach optional files (screenshots, images, PDFs) with `rei doc attach` to the why-note or another entity the user names, and show how to recall it later. Use when the user attaches a link to work in progress with a reason; use rei-ingest-url to summarize a page and rei-bookmark-url to file it under a topic.
+description: Attach a URL to an intention and record why it was attached — reuse or create the canonical link, connect link → intention with a purpose predicate (inspiration-for, reference-for, comparable-for, …) whose edge description holds the specific reason ("their pricing table"), wire the aspects that made it relevant to topics (`exemplifies` or `about`), classify the link, add a why-note that `references` the link when the reason is too long for one line or files come with it, attach optional files (screenshots, images, PDFs) under standardized names and titles with `rei doc attach` to the why-note or another entity the user names, and show how to recall it later. Use when the user attaches a link to work in progress with a reason; use rei-ingest-url to summarize a page and rei-bookmark-url to file it under a topic.
 allowed-tools: AskUserQuestion, Bash, Read, WebFetch
 ---
 
@@ -51,8 +51,17 @@ repeat them.
   only when the user asks for that.
 - **Always `--copy`.** Without it the doc records the file's current path, and screenshots in
   `~/Desktop`, `~/Downloads`, or a temp dir get moved or deleted. `--copy` stores the file
-  under `workspace/docs/doc_<id>.<ext>`. `doc attach` has no title flag, so set the title with
-  `rei doc set-title` afterwards.
+  under `workspace/docs/doc_<id><ext>`, so the original filename is dropped. Only its
+  extension is kept, unchanged.
+- **Standardized naming.** User files often come with names like `Screenshot 2026-10-04 at
+  10.15.32 AM.PNG` or `IMG_4821.jpeg`. Never attach such a file directly. Stage a copy first:
+  - **Stage name**: `<site>-<caption>.<ext>`, a kebab-case ASCII slug of at most 60 characters
+    before the extension: `acme-pricing-table-annual-toggle.png`.
+  - **Extension**: lowercase, with `.jpeg` written as `.jpg` and `.tif` as `.tiff`. This is
+    the part rei stores.
+  - **Title**: `<link title> — <caption>`, for example `Acme — Pricing table, annual toggle
+    on`. Shorten a long page title to the site or product name. Set it with
+    `rei doc set-title`, because `doc attach` has no title flag.
 - **Exit status**: `link`, `edge`, `predicate`, and `doc` writes can print an error and still exit
   `0`. Topic associations and `note new` follow the exit contract (`2` refused or invalid,
   `70` store failure). Verify by reading back (Phase 8).
@@ -173,7 +182,8 @@ To:     <intention title> (<intention_id>)
 Why:    inspiration-for — "Pricing table — three tiers side by side, annual toggle"
 Aspects: pricing-table  exemplifies   REUSE / CREATE (instance-of ui-pattern)
 Note:   none / why-note (details below)
-Files:  pricing.png → why-note  "Pricing table, annual toggle on"
+Files:  "Screenshot … 10.15.32 AM.PNG" → acme-pricing-table-annual-toggle.png → why-note
+        title "Acme — Pricing table, annual toggle on"
 Props:  content-type=homepage, platform=website
 ```
 
@@ -266,14 +276,31 @@ one-line reason, the note is the reason plus that list.
 target in Phase 1:
 
 ```bash
-# skip a file already on the target (re-runs)
+# skip a file already on the target (re-runs); the hash covers content only, not the name
 rei doc list -n NOTE_ID --json \
   | jq -r --arg h "$(shasum -a 256 "ABS_PATH" | cut -d' ' -f1)" '.docs[] | select(.contentHash == $h) | .docId'
 
-rei --actor claude-code doc attach -n NOTE_ID --copy "ABS_PATH"
+# stage under a standardized name (see Key Concepts: Standardized naming)
+SRC="ABS_PATH"
+case "$(basename "$SRC")" in
+  *.*) EXT=".$(printf '%s' "${SRC##*.}" | tr '[:upper:]' '[:lower:]')" ;;
+  *)   EXT="" ;;
+esac
+case "$EXT" in .jpeg) EXT=.jpg ;; .tif) EXT=.tiff ;; esac
+SLUG=$(printf '%s' "SITE CAPTION" \
+  | perl -CS -MUnicode::Normalize -pe '$_ = lc NFKD($_); s/\p{Mn}//g; s/[^a-z0-9]+/-/g; s/^-+//' \
+  | cut -c1-60 | sed -E 's/-+$//')
+STAGED="$(mktemp -d)/${SLUG}${EXT}"
+cp "$SRC" "$STAGED"
+
+rei --actor claude-code doc attach -n NOTE_ID --copy "$STAGED"
 # other targets: -i INTENTION_ID | -i INTENTION_ID -a ACTION_ID | -i INTENTION_ID -o OUTCOME_ID | --topic TOPIC_ID
-rei --actor claude-code doc set-title DOC_ID "CAPTION"
+rei --actor claude-code doc set-title DOC_ID "LINK_TITLE — CAPTION"
+rm -r "$(dirname "$STAGED")"
 ```
+
+Leave the user's original file where it is, under its original name. Only the staged copy is
+renamed. When two files would get the same slug, append `-2`, `-3`, and so on.
 
 Capture `DOC_ID` from the `Document attached: doc_…` line. Always pass the anchor flag
 explicitly, because a bare `doc attach FILE` opens the fzf picker.
@@ -324,7 +351,7 @@ rei doc open DOC_ID
 ### Context
 - Aspects: <topic> exemplifies (reused / created instance-of <type>), <topic> about
 - Why-note: <note_id> -[references]-> link  (or: not needed)
-- Attachments: <doc_id> "<caption>" → <note_id / intention_id / …>  (or: none; already attached)
+- Attachments: <doc_id> "<link title> — <caption>" (from "<original filename>") → <note_id / intention_id / …>  (or: none; already attached)
 - Properties: content-type=<v>, platform=<v>  (or: already set / skipped)
 - Predicates defined: <key>  (or: none)
 
@@ -339,7 +366,8 @@ rei edge show <link_id>
 
 - The reason goes on the edge (per link and intention), never in a link property.
 - Record the user's reason, not your opinion of the page. Don't fetch-and-summarize.
-- Attach only the files the user supplied, always with `--copy`. Never attach a page screenshot
+- Attach only the files the user supplied, always staged under a standardized name and with
+  `--copy`. Never rename or move the user's original file. Never attach a page screenshot
   you captured yourself.
 - Don't create topics for generic aspects or for the site's owner. Don't restructure the
   ontology; point at `rei-curate-ontology` for existing problems.
